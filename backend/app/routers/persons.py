@@ -75,21 +75,25 @@ def _build_person_response(person: TargetPerson, db: Session) -> PersonOut:
 
     # Calculate average trade return pct based on actual price_at_transaction
     from app.models import AssetPerformance
-    trades_for_perf = db.query(Trade).filter(
-        Trade.target_person_id == person.id,
-        Trade.price_at_transaction.isnot(None)
-    ).all()
-    
     avg_return_pct = None
-    if trades_for_perf:
-        returns = []
-        for t in trades_for_perf:
-            perf_entry = db.query(AssetPerformance).filter(AssetPerformance.ticker == t.ticker).first()
-            if perf_entry and perf_entry.current_price and t.price_at_transaction > 0:
-                ret = ((perf_entry.current_price - t.price_at_transaction) / t.price_at_transaction) * 100
-                returns.append(ret)
-        if returns:
-            avg_return_pct = round(sum(returns) / len(returns), 2)
+    try:
+        trades_for_perf = db.query(Trade).filter(
+            Trade.target_person_id == person.id,
+            Trade.price_at_transaction.isnot(None)
+        ).all()
+        
+        if trades_for_perf:
+            returns = []
+            for t in trades_for_perf:
+                perf_entry = db.query(AssetPerformance).filter(AssetPerformance.ticker == t.ticker).first()
+                if perf_entry and perf_entry.current_price and t.price_at_transaction and t.price_at_transaction > 0:
+                    ret = ((perf_entry.current_price - t.price_at_transaction) / t.price_at_transaction) * 100
+                    returns.append(ret)
+            if returns:
+                avg_return_pct = round(sum(returns) / len(returns), 2)
+    except Exception:
+        # Column may not exist yet if DB hasn't been migrated; gracefully degrade
+        pass
 
     from app.models import Subscription
     is_subscribed = (
