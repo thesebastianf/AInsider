@@ -1,0 +1,47 @@
+# ═══════════════════════════════════════════════════════
+# AInsider Tracker – .gitignore
+# ═══════════════════════════════════════════════════════
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/build/
+.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+docker-compose.private.yml
+
+# Logs
+*.log
+logs/
+
+# Database
+*.sql
+*.dump

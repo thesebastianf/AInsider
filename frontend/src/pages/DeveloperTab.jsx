@@ -1,0 +1,96 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useApi } from '../hooks/useApi';
+import { getSystemStats, getSystemLogs } from '../api/client';
+import { BarChart3, Clock, Users, Activity, Cpu, Database } from 'lucide-react';
+import StatWidget from '../components/StatWidget';
+import LogConsole from '../components/LogConsole';
+
+function formatUptime(seconds) {
+  if (!seconds) return '0s';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+export default function DeveloperTab() {
+  const fetchStats = useCallback(() => getSystemStats(), []);
+  const fetchLogs = useCallback(() => getSystemLogs(200), []);
+
+  const { data: stats } = useApi(fetchStats, []);
+  const { data: logsData, refetch: refetchLogs } = useApi(fetchLogs, []);
+
+  // Auto-refresh logs every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(refetchLogs, 5000);
+    return () => clearInterval(interval);
+  }, [refetchLogs]);
+
+  return (
+    <div className="px-5 py-5 space-y-5 animate-fade-in">
+      {/* ─── Dashboard Header ──────────────────────────── */}
+      <div className="flex items-center gap-2">
+        <Activity size={16} className="text-blue-400" />
+        <span className="text-sm font-semibold text-slate-200">System Dashboard</span>
+      </div>
+
+      {/* ─── Stats Grid ────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3">
+        <StatWidget
+          icon={BarChart3}
+          label="Trades"
+          value={stats?.total_trades ?? '–'}
+          color="#3b82f6"
+        />
+        <StatWidget
+          icon={Clock}
+          label="Uptime"
+          value={formatUptime(stats?.uptime_seconds)}
+          color="#10b981"
+        />
+        <StatWidget
+          icon={Users}
+          label="Persons"
+          value={stats?.total_persons ?? '–'}
+          color="#a855f7"
+        />
+        <StatWidget
+          icon={Cpu}
+          label="LLM"
+          value={stats?.llm_status === 'configured' ? '✅' : '⚠️'}
+          sub={stats?.llm_status}
+          color={stats?.llm_status === 'configured' ? '#10b981' : '#f59e0b'}
+        />
+      </div>
+
+      {/* ─── Status Row ────────────────────────────────── */}
+      <div className="glass-card p-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Database size={14} className="text-slate-400" />
+          <span className="text-xs text-slate-400">Database</span>
+        </div>
+        <span className="text-xs font-semibold text-emerald-400">
+          {stats?.db_status || 'checking...'}
+        </span>
+      </div>
+
+      {stats?.last_pipeline_run && (
+        <div className="glass-card p-3 flex items-center justify-between">
+          <span className="text-xs text-slate-400">Last Pipeline Run</span>
+          <span className="text-xs text-slate-300">
+            {new Date(stats.last_pipeline_run).toLocaleString()}
+          </span>
+        </div>
+      )}
+
+      {/* ─── Log Console ───────────────────────────────── */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Live Logs</span>
+          <span className="text-[10px] text-slate-600">{logsData?.logs?.length || 0} entries</span>
+        </div>
+        <LogConsole logs={logsData?.logs || []} />
+      </div>
+    </div>
+  );
+}

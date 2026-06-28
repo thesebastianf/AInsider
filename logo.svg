@@ -1,0 +1,40 @@
+<svg width="120" height="120" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ai-gradient" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stopColor="#3b82f6" />
+      <stop offset="100%" stopColor="#06b6d4" />
+    </linearGradient>
+    
+    <!-- Glow Filter für den Neon-Effekt -->
+    <filter id="neon-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.2" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Äußerer Radar-Ring (Tracker) -->
+  <circle 
+    cx="12" cy="12" r="11" 
+    stroke="url(#ai-gradient)" 
+    stroke-width="1" 
+    stroke-dasharray="4 4" 
+    opacity="0.4"
+  />
+
+  <!-- Innerer, solider Ring -->
+  <circle cx="12" cy="12" r="9" stroke="rgba(59,130,246,0.2)" stroke-width="0.5" />
+
+  <!-- Das messerscharfe 'A' / Der Aufwärts-Trend -->
+  <path 
+    d="M12 3 L20 18 H15.5 L12 11 L8.5 18 H4 L12 3Z" 
+    fill="url(#ai-gradient)" 
+    filter="url(#neon-glow)"
+  />
+
+  <!-- Schwebender KI-Datenknoten im Zentrum -->
+  <circle 
+    cx="12" cy="15" r="2.5" 
+    fill="#ffffff" 
+    filter="url(#neon-glow)"
+  />
+</svg>
