@@ -52,7 +52,10 @@ class HouseStockWatcherProvider(BaseDataSourceProvider):
     def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
         trades = []
         try:
-            resp = httpx.get(self.URL, timeout=30.0)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            resp = httpx.get(self.URL, headers=headers, timeout=30.0)
             resp.raise_for_status()
             data = resp.json()
 
@@ -117,7 +120,10 @@ class SenateStockWatcherProvider(BaseDataSourceProvider):
     def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
         trades = []
         try:
-            resp = httpx.get(self.URL, timeout=30.0)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            resp = httpx.get(self.URL, headers=headers, timeout=30.0)
             resp.raise_for_status()
             data = resp.json()
 
@@ -200,11 +206,153 @@ class SEC13FProvider(BaseDataSourceProvider):
         return []
 
 
+class SECForm4Provider(BaseDataSourceProvider):
+    """Fetches real insider trades from SEC EDGAR Form 4 filings."""
+    
+    URL = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&output=atom"
+
+    def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
+        trades = []
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        
+        try:
+            resp = httpx.get(self.URL, headers=headers, timeout=30.0)
+            resp.raise_for_status()
+            
+            import xml.etree.ElementTree as ET
+            import re
+            
+            root = ET.fromstring(resp.content)
+            # Atom namespace
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
+            entries = root.findall("atom:entry", ns)[:limit]
+            
+            for entry in entries:
+                try:
+                    title_elem = entry.find("atom:title", ns)
+                    link_elem = entry.find("atom:link", ns)
+                    if title_elem is None or link_elem is None:
+                        continue
+                        
+                    title = title_elem.text or ""
+                    index_url = link_elem.attrib.get("href", "")
+                    if not index_url:
+                        continue
+                        
+                    # Parse owner name and issuer company from title:
+                    # e.g., "4 - Musk Elon (0001315535) (Subject) / TESLA, INC. (0001318605) (Issuer)"
+                    match = re.search(r"4\s*-\s*([^(]+)\s*\(.*Subject\)\s*/\s*([^(]+)", title)
+                    if not match:
+                        continue
+                        
+                    owner_name = match.group(1).strip()
+                    company_name = match.group(2).strip()
+                    
+                    # 1. Fetch HTML index page to find the XML URL
+                    index_resp = httpx.get(index_url, headers=headers, timeout=10.0)
+                    if index_resp.status_code != 200:
+                        continue
+                        
+                    # Find xml href (e.g. href="/Archives/edgar/data/1318605/000191234524012345/form4.xml")
+                    xml_match = re.search(r'href="(/Archives/edgar/data/[^"]+\.xml)"', index_resp.text)
+                    if not xml_match:
+                        continue
+                        
+                    xml_url = "https://www.sec.gov" + xml_match.group(1)
+                    
+                    # 2. Fetch the XML document
+                    xml_resp = httpx.get(xml_url, headers=headers, timeout=10.0)
+                    if xml_resp.status_code != 200:
+                        continue
+                        
+                    xml_root = ET.fromstring(xml_resp.content)
+                    
+                    # 3. Parse Ticker Symbol
+                    ticker_elem = xml_root.find(".//issuerTradingSymbol")
+                    if ticker_elem is None or not ticker_elem.text:
+                        continue
+                    ticker = ticker_elem.text.strip().upper()
+                    
+                    # 4. Parse Corporate Title
+                    title_elem = xml_root.find(".//officerTitle")
+                    corporate_title = title_elem.text.strip() if (title_elem is not None and title_elem.text) else "Insider"
+                    
+                    # 5. Parse first transaction (non-derivative)
+                    trans = xml_root.find(".//nonDerivativeTransaction")
+                    if trans is None:
+                        continue
+                        
+                    t_date_elem = trans.find(".//transactionDate/value")
+                    t_code_elem = trans.find(".//transactionCoding/transactionCode")
+                    t_shares_elem = trans.find(".//transactionAmounts/transactionShares/value")
+                    t_price_elem = trans.find(".//transactionAmounts/transactionPricePerShare/value")
+                    t_code_ad_elem = trans.find(".//transactionAmounts/transactionAcquiredDisposedCode/value")
+                    
+                    if t_date_elem is None or not t_date_elem.text:
+                        continue
+                        
+                    # Date formatting (YYYY-MM-DD)
+                    parts = t_date_elem.text.split("-")
+                    if len(parts) == 3:
+                        td = date(int(parts[0]), int(parts[1]), int(parts[2]))
+                    else:
+                        continue
+                        
+                    # Determine BUY / SELL
+                    code = t_code_elem.text if (t_code_elem is not None and t_code_elem.text) else ""
+                    code_ad = t_code_ad_elem.text if (t_code_ad_elem is not None and t_code_ad_elem.text) else ""
+                    
+                    if code == "P" or code_ad == "A":
+                        trade_type = "BUY"
+                    elif code == "S" or code_ad == "D":
+                        trade_type = "SELL"
+                    else:
+                        continue
+                        
+                    shares = float(t_shares_elem.text) if (t_shares_elem is not None and t_shares_elem.text) else 0.0
+                    price = float(t_price_elem.text) if (t_price_elem is not None and t_price_elem.text) else 0.0
+                    
+                    value = shares * price
+                    if value == 0:
+                        amount_range = f"{int(shares):,} shares"
+                    else:
+                        amount_range = f"${value:,.2f} ({int(shares):,} sh @ ${price:,.2f})"
+                        
+                    trade = RawTrade(
+                        person_name=owner_name,
+                        person_category="Corporate Insider",
+                        committees=[],
+                        ticker=ticker,
+                        trade_type=trade_type,
+                        amount_range=amount_range[:50],
+                        trade_date=td,
+                        filing_date=date.today(),
+                        source_url=xml_url,
+                    )
+                    trades.append(trade)
+                    logger.info(f"Form 4 parsed: {owner_name} ({corporate_title} @ {company_name}) {trade_type} {ticker}")
+                except Exception as e:
+                    logger.warning(f"SECForm4Provider: Skipping entry: {e}")
+                    continue
+        except Exception as e:
+            logger.error(f"SECForm4Provider: Failed to parse feed: {e}")
+            try:
+                from app.routers.system import add_log
+                add_log("ERROR", f"SECForm4Provider fetch failed: {str(e)[:150]}")
+            except Exception:
+                pass
+                
+        return trades
+
+
 PROVIDER_CLASSES = {
     "house": HouseStockWatcherProvider,
     "senate": SenateStockWatcherProvider,
     "quiver": QuiverQuantProvider,
     "sec13f": SEC13FProvider,
+    "sec_form4": SECForm4Provider,
 }
 
 
@@ -238,11 +386,18 @@ def fetch_trades() -> List[RawTrade]:
                 
             logger.info(f"Fetching from data source: {source.name} ({source.provider_type})")
             provider = provider_cls(source)
-            trades = provider.fetch_trades(limit=2000)
-            all_trades.extend(trades)
-            
-            # Update last fetch time
-            source.last_fetch = datetime.now()
+            try:
+                trades = provider.fetch_trades(limit=2000)
+                all_trades.extend(trades)
+                # Update last fetch time
+                source.last_fetch = datetime.now()
+            except Exception as e:
+                logger.error(f"Error fetching from data source {source.name}: {e}")
+                try:
+                    from app.routers.system import add_log
+                    add_log("ERROR", f"Failed fetching data source '{source.name}': {str(e)[:150]}")
+                except Exception:
+                    pass
             
         db.commit()
     finally:

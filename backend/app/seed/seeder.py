@@ -167,8 +167,18 @@ def seed_database(db: Session) -> bool:
                 provider_type="senate", name="Senate Stock Watcher",
                 config_json={}, is_enabled=True
             )
+            sec13f_ds = DataSourceConfig(
+                provider_type="sec13f", name="SEC 13F (Fund Managers)",
+                config_json={}, is_enabled=True
+            )
+            sec_form4_ds = DataSourceConfig(
+                provider_type="sec_form4", name="SEC Form 4 (Corporate Insiders)",
+                config_json={}, is_enabled=True
+            )
             db.add(house_ds)
             db.add(senate_ds)
+            db.add(sec13f_ds)
+            db.add(sec_form4_ds)
         seeded = True
 
     if seeded:

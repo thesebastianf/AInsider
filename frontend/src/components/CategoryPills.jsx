@@ -1,4 +1,4 @@
-const categories = ['All', 'Congress', 'Senate', 'Fund Manager'];
+const categories = ['All', 'Congress', 'Senate', 'Corporate Insider', 'Fund Manager'];
 
 export default function CategoryPills({ active, onChange }) {
   return (

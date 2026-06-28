@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
     # Seed database if empty
     try:
         db = SessionLocal()
-        from app.seed.mock_data import seed_database
+        from app.seed.seeder import seed_database
         seeded = seed_database(db)
         if seeded:
             add_log("INFO", "Database seeded with demo data")

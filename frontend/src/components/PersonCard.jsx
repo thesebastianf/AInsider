@@ -25,7 +25,9 @@ export default function PersonCard({ person, performance, onToggleFollow }) {
           </div>
           
           <div>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-tight flex flex-wrap items-center gap-1.5">
+            <h3 className="text-lg font-bold leading-tight flex flex-wrap items-center gap-1.5"
+              style={{ color: 'var(--text-bright)' }}
+            >
               {person.name}
               {!person.is_active && (
                 <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-red-500/15 text-red-500 border border-red-500/20 uppercase tracking-wider shrink-0">
@@ -35,7 +37,9 @@ export default function PersonCard({ person, performance, onToggleFollow }) {
             </h3>
             <span className="text-[10px] text-cyan-500 dark:text-cyan-400 font-semibold uppercase tracking-wider font-mono">{person.category}</span>
             {person.description && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 italic leading-snug line-clamp-2 max-w-[240px]">
+              <p className="text-[11px] mt-1.5 italic leading-snug line-clamp-2 max-w-[240px]"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 "{person.description}"
               </p>
             )}
@@ -65,14 +69,18 @@ export default function PersonCard({ person, performance, onToggleFollow }) {
                 {trade.type === 'BUY' ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
               </div>
               <div>
-                <div className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1">
+                <div className="text-sm font-bold flex items-center gap-1"
+                  style={{ color: 'var(--text-bright)' }}
+                >
                   {trade.ticker}
                 </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                <div className="text-xs flex items-center gap-1.5"
+                  style={{ color: 'var(--text-muted)' }}
+                >
                   {new Date(trade.trade_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   {trade.source_url && (
                     <a href={trade.source_url} target="_blank" rel="noopener noreferrer" 
-                      className="text-[10px] text-cyan-500 hover:text-cyan-400 hover:underline flex items-center gap-0.5"
+                      className="text-cyan-500 hover:text-cyan-400 hover:underline flex items-center gap-0.5"
                       title="View Official Government Disclosure"
                     >
                       • Link ↗
@@ -83,7 +91,9 @@ export default function PersonCard({ person, performance, onToggleFollow }) {
             </div>
             
             <div className="text-right">
-              <div className="text-sm text-slate-700 dark:text-slate-300 font-medium">{trade.amount_range}</div>
+              <div className="text-sm font-medium"
+                style={{ color: 'var(--text-main)' }}
+              >{trade.amount_range}</div>
               <div className="flex items-center justify-end mt-1">
                 <AIScoreBadge score={trade.ai_score} />
               </div>

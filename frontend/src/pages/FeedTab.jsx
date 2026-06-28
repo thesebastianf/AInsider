@@ -34,7 +34,7 @@ export default function FeedTab() {
       {/* Filter Row */}
       <div className="flex flex-wrap gap-2">
         <div className="flex rounded-lg bg-slate-900/60 p-0.5 border border-slate-800/50">
-          {['All', 'Congress', 'Senate'].map(c => (
+          {['All', 'Congress', 'Senate', 'Corporate Insider', 'Fund Manager'].map(c => (
             <button key={c} onClick={() => setCategory(c)}
               className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-all ${
                 category === c ? 'bg-cyan-500/20 text-cyan-400' : 'text-slate-500 hover:text-slate-300'
