@@ -77,28 +77,7 @@ SEED_PERSONS = [
     },
 ]
 
-def seed_database(db: Session) -> bool:
-    """Seed the database with initial configurations and persons. Returns True if seeded."""
-    
-    # Check if already seeded
-    existing = db.query(TargetPerson).count()
-    if existing > 0:
-        logger.info(f"Database already has {existing} persons, skipping initial seed")
-        return False
 
-    logger.info("Seeding database with initial data and configurations...")
-
-    # 1. Seed Persons
-    for p in SEED_PERSONS:
-        person = TargetPerson(
-            name=p["name"], category=p["category"],
-            committee_affiliations=p["committees"],
-            photo_url=p.get("photo_url"),
-            description=p.get("description"),
-            is_followed=p["name"] in ["Nancy Pelosi", "Tommy Tuberville"],
-        )
-        db.add(person)
-        
 def seed_database(db: Session) -> bool:
     """Seed the database with initial configurations and target persons if they are missing."""
     seeded = False

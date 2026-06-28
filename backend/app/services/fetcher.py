@@ -100,6 +100,11 @@ class HouseStockWatcherProvider(BaseDataSourceProvider):
 
         except Exception as e:
             logger.error(f"HouseStockWatcher: Failed to fetch data: {e}")
+            try:
+                from app.routers.system import add_log
+                add_log("ERROR", f"HouseStockWatcher fetch failed: {str(e)[:150]}")
+            except Exception:
+                pass
 
         return trades
 
@@ -160,6 +165,11 @@ class SenateStockWatcherProvider(BaseDataSourceProvider):
 
         except Exception as e:
             logger.error(f"SenateStockWatcher: Failed to fetch data: {e}")
+            try:
+                from app.routers.system import add_log
+                add_log("ERROR", f"SenateStockWatcher fetch failed: {str(e)[:150]}")
+            except Exception:
+                pass
 
         return trades
 
@@ -169,6 +179,11 @@ class QuiverQuantProvider(BaseDataSourceProvider):
     
     def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
         logger.warning("QuiverQuantProvider is not fully implemented yet.")
+        try:
+            from app.routers.system import add_log
+            add_log("WARNING", "QuiverQuantProvider: Real-time API feed is not fully implemented yet.")
+        except Exception:
+            pass
         return []
 
 
@@ -177,6 +192,11 @@ class SEC13FProvider(BaseDataSourceProvider):
     
     def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
         logger.warning("SEC13FProvider is not fully implemented yet.")
+        try:
+            from app.routers.system import add_log
+            add_log("WARNING", "SEC13FProvider: SEC EDGAR 13F parsing is not fully implemented yet.")
+        except Exception:
+            pass
         return []
 
 
@@ -198,12 +218,22 @@ def fetch_trades() -> List[RawTrade]:
         
         if not active_sources:
             logger.warning("No active Data Source providers configured.")
+            try:
+                from app.routers.system import add_log
+                add_log("WARNING", "No active Data Source providers enabled. Go to Settings -> Data Sources to activate them.")
+            except Exception:
+                pass
             return []
 
         for source in active_sources:
             provider_cls = PROVIDER_CLASSES.get(source.provider_type)
             if not provider_cls:
                 logger.error(f"Unknown data source provider type: {source.provider_type}")
+                try:
+                    from app.routers.system import add_log
+                    add_log("ERROR", f"Unknown data source provider type: {source.provider_type}")
+                except Exception:
+                    pass
                 continue
                 
             logger.info(f"Fetching from data source: {source.name} ({source.provider_type})")
