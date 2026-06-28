@@ -38,7 +38,6 @@ def get_settings(db: Session = Depends(get_db)):
     ds_configs = db.query(DataSourceConfig).all()
 
     return AppSettingsOut(
-        data_source_mode=_runtime_overrides.get("data_source_mode", settings.DATA_SOURCE_MODE),
         scheduler_interval_minutes=_runtime_overrides.get(
             "scheduler_interval_minutes", settings.SCHEDULER_INTERVAL_MINUTES
         ),
