@@ -1,7 +1,8 @@
-import { Briefcase, Activity, Settings, TerminalSquare } from 'lucide-react';
+import { Briefcase, Compass, Activity, Settings, TerminalSquare } from 'lucide-react';
 
 const tabs = [
   { id: 'portfolios', label: 'Portfolios', icon: Briefcase },
+  { id: 'discover', label: 'Discover', icon: Compass },
   { id: 'feed', label: 'Live Feed', icon: Activity },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'developer', label: 'Developer', icon: TerminalSquare },

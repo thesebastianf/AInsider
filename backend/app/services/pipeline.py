@@ -123,10 +123,6 @@ def run_pipeline() -> dict:
                 person = _get_or_create_person(db, raw)
                 db.commit()
 
-                # If the person is not actively tracked, skip their trades
-                if not person.is_tracked:
-                    continue
-
                 # Step 3: Insert trade (deduplication)
                 trade = _insert_trade(db, person, raw)
                 if trade is None:
@@ -134,6 +130,12 @@ def run_pipeline() -> dict:
                     continue
 
                 stats["new_trades"] += 1
+
+                # If the person is not actively tracked, skip downstream AI, price updates, and notifications
+                if not person.is_tracked:
+                    db.commit()
+                    continue
+
                 add_log("INFO", f"New trade: {raw.person_name} {raw.trade_type} {raw.ticker} ({raw.amount_range})")
 
                 # Step 4: AI Evaluation via configured LLM provider

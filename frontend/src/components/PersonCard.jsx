@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Star, Bell, Trash2, User, Copy, X, Loader2 } from 'lucide-react';
+import { Star, Bell, Trash2, User, Copy, X, Loader2, Plus } from 'lucide-react';
 
 const TICKER_INFO = {
   AAPL: { name: 'Apple Inc.', isin: 'US0378331005' },
@@ -33,7 +33,7 @@ function getTickerDetails(ticker) {
   };
 }
 
-export default function PersonCard({ person, performance, onToggleFollow, onToggleSubscribe, onUntrack }) {
+export default function PersonCard({ person, performance, onToggleFollow, onToggleSubscribe, onUntrack, onTrack }) {
   const [showHistory, setShowHistory] = useState(false);
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -100,40 +100,53 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
           </div>
           
           <div className="flex items-center gap-1 z-20 shrink-0">
-            {/* Follow Button */}
-            <button 
-              onClick={(e) => { e.stopPropagation(); onToggleFollow(person.id); }} 
-              className="p-1.5 bg-surface-2 rounded-full hover:bg-surface-3 transition-colors border border-border"
-              title={person.is_followed ? "Unfollow" : "Follow"}
-            >
-              <Star className={`h-3.5 w-3.5 transition-all ${
-                person.is_followed 
-                  ? 'text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' 
-                  : 'text-slate-400 dark:text-slate-500'
-              }`} />
-            </button>
+            {person.is_tracked ? (
+              <>
+                {/* Follow Button */}
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onToggleFollow(person.id); }} 
+                  className="p-1.5 bg-surface-2 rounded-full hover:bg-surface-3 transition-colors border border-border"
+                  title={person.is_followed ? "Unfollow" : "Follow"}
+                >
+                  <Star className={`h-3.5 w-3.5 transition-all ${
+                    person.is_followed 
+                      ? 'text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' 
+                      : 'text-slate-400 dark:text-slate-500'
+                  }`} />
+                </button>
 
-            {/* Subscribe Button */}
-            <button 
-              onClick={(e) => { e.stopPropagation(); onToggleSubscribe(person.id); }} 
-              className="p-1.5 bg-surface-2 rounded-full hover:bg-surface-3 transition-colors border border-border"
-              title={person.is_subscribed ? "Unsubscribe from alerts" : "Subscribe to alerts"}
-            >
-              <Bell className={`h-3.5 w-3.5 transition-all ${
-                person.is_subscribed 
-                  ? 'text-cyan-500 fill-cyan-500/20 drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]' 
-                  : 'text-slate-400 dark:text-slate-500'
-              }`} />
-            </button>
+                {/* Subscribe Button */}
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onToggleSubscribe(person.id); }} 
+                  className="p-1.5 bg-surface-2 rounded-full hover:bg-surface-3 transition-colors border border-border"
+                  title={person.is_subscribed ? "Unsubscribe from alerts" : "Subscribe to alerts"}
+                >
+                  <Bell className={`h-3.5 w-3.5 transition-all ${
+                    person.is_subscribed 
+                      ? 'text-cyan-500 fill-cyan-500/20 drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]' 
+                      : 'text-slate-400 dark:text-slate-500'
+                  }`} />
+                </button>
 
-            {/* Untrack Button */}
-            <button 
-              onClick={(e) => { e.stopPropagation(); onUntrack(person.id); }} 
-              className="p-1.5 bg-surface-2 rounded-full hover:bg-red-500/10 hover:border-red-500/30 text-slate-400 hover:text-red-500 transition-colors border border-border"
-              title="Remove from portfolios"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+                {/* Untrack Button */}
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onUntrack(person.id); }} 
+                  className="p-1.5 bg-surface-2 rounded-full hover:bg-red-500/10 hover:border-red-500/30 text-slate-400 hover:text-red-500 transition-colors border border-border"
+                  title="Remove from portfolios"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </>
+            ) : (
+              /* Track Button */
+              <button 
+                onClick={(e) => { e.stopPropagation(); onTrack && onTrack(person.id); }} 
+                className="px-2.5 py-1 bg-emerald-500/25 text-emerald-400 hover:bg-emerald-500/35 border border-emerald-500/35 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 hover:scale-105 active:scale-95 duration-200"
+                title="Add to Portfolios"
+              >
+                <Plus size={10} /> Track
+              </button>
+            )}
           </div>
         </div>
 

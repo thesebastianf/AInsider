@@ -2,12 +2,14 @@ import { useState } from 'react';
 import Layout from './components/Layout';
 import BottomNav from './components/BottomNav';
 import PortfoliosTab from './pages/PortfoliosTab';
+import DiscoverTab from './pages/DiscoverTab';
 import FeedTab from './pages/FeedTab';
 import SettingsTab from './pages/SettingsTab';
 import DeveloperTab from './pages/DeveloperTab';
 
 const tabs = {
   portfolios: PortfoliosTab,
+  discover: DiscoverTab,
   feed: FeedTab,
   settings: SettingsTab,
   developer: DeveloperTab,
