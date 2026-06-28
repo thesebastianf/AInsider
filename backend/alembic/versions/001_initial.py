@@ -23,6 +23,8 @@ def upgrade() -> None:
         sa.Column("committee_affiliations", sa.JSON(), server_default="[]"),
         sa.Column("photo_url", sa.String(500), nullable=True),
         sa.Column("description", sa.Text(), nullable=True),
+        sa.Column("is_tracked", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column("is_followed", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
     )

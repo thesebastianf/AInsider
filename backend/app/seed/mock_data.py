@@ -99,28 +99,55 @@ def seed_database(db: Session) -> bool:
         )
         db.add(person)
         
-    # 2. Seed LLM config from environment, otherwise fallback to inactive Ollama
-    if settings.SEED_LLM_PROVIDER and settings.SEED_LLM_URL and settings.SEED_LLM_MODEL:
-        llm_config = LLMConfig(
-            provider_type=settings.SEED_LLM_PROVIDER,
-            name=f"Seeded {settings.SEED_LLM_PROVIDER.title()}",
-            api_url=settings.SEED_LLM_URL,
-            model_name=settings.SEED_LLM_MODEL,
-            api_key=settings.SEED_LLM_API_KEY,
-            is_active=True,
-        )
-        logger.info(f"Seeded LLM provider: {settings.SEED_LLM_PROVIDER}")
-        db.add(llm_config)
-    else:
-        default_llm = LLMConfig(
-            provider_type="ollama", name="Local Ollama",
-            api_url="http://localhost:11434", model_name="llama3",
-            is_active=False,
-        )
-        db.add(default_llm)
+def seed_database(db: Session) -> bool:
+    """Seed the database with initial configurations and target persons if they are missing."""
+    seeded = False
 
-    # 3. Seed Notification config from environment
-    if settings.SEED_NOTIFY_PROVIDER and settings.SEED_NOTIFY_CONFIG:
+    # 1. Seed Target Persons
+    existing_persons = db.query(TargetPerson).count()
+    if existing_persons == 0:
+        logger.info("Seeding target persons...")
+        for p in SEED_PERSONS:
+            person = TargetPerson(
+                name=p["name"], category=p["category"],
+                committee_affiliations=p["committees"],
+                photo_url=p.get("photo_url"),
+                description=p.get("description"),
+                is_tracked=True,
+                is_active=True,
+                is_followed=p["name"] in ["Nancy Pelosi", "Tommy Tuberville"],
+            )
+            db.add(person)
+        seeded = True
+    else:
+        logger.info(f"Target persons already seeded ({existing_persons})")
+
+    # 2. Seed LLM config
+    existing_llm = db.query(LLMConfig).count()
+    if existing_llm == 0:
+        logger.info("Seeding LLM configurations...")
+        if settings.SEED_LLM_PROVIDER and settings.SEED_LLM_URL and settings.SEED_LLM_MODEL:
+            llm_config = LLMConfig(
+                provider_type=settings.SEED_LLM_PROVIDER,
+                name=f"Seeded {settings.SEED_LLM_PROVIDER.title()}",
+                api_url=settings.SEED_LLM_URL,
+                model_name=settings.SEED_LLM_MODEL,
+                api_key=settings.SEED_LLM_API_KEY,
+                is_active=True,
+            )
+            db.add(llm_config)
+        else:
+            default_llm = LLMConfig(
+                provider_type="ollama", name="Local Ollama",
+                api_url="http://localhost:11434", model_name="llama3",
+                is_active=False,
+            )
+            db.add(default_llm)
+        seeded = True
+
+    # 3. Seed Notification config
+    existing_notify = db.query(NotificationConfig).count()
+    if existing_notify == 0 and settings.SEED_NOTIFY_PROVIDER and settings.SEED_NOTIFY_CONFIG:
         import json
         try:
             config_json = json.loads(settings.SEED_NOTIFY_CONFIG)
@@ -130,41 +157,42 @@ def seed_database(db: Session) -> bool:
                 config_json=config_json,
                 is_enabled=True,
             )
-            logger.info(f"Seeded Notification provider: {settings.SEED_NOTIFY_PROVIDER}")
             db.add(notify_config)
+            seeded = True
         except json.JSONDecodeError:
             logger.error("Failed to parse SEED_NOTIFY_CONFIG json")
 
-    # 4. Seed Data Source config from environment or defaults
-    if settings.SEED_DATASOURCE_PROVIDER:
-        # User specified a specific provider via env
-        import json
-        try:
-            config_json = json.loads(settings.SEED_DATASOURCE_CONFIG or "{}")
-            ds_config = DataSourceConfig(
-                provider_type=settings.SEED_DATASOURCE_PROVIDER,
-                name=f"Seeded {settings.SEED_DATASOURCE_PROVIDER.title()}",
-                config_json=config_json,
-                is_enabled=True,
+    # 4. Seed Data Source config
+    existing_ds = db.query(DataSourceConfig).count()
+    if existing_ds == 0:
+        logger.info("Seeding default Data Sources...")
+        if settings.SEED_DATASOURCE_PROVIDER:
+            import json
+            try:
+                config_json = json.loads(settings.SEED_DATASOURCE_CONFIG or "{}")
+                ds_config = DataSourceConfig(
+                    provider_type=settings.SEED_DATASOURCE_PROVIDER,
+                    name=f"Seeded {settings.SEED_DATASOURCE_PROVIDER.title()}",
+                    config_json=config_json,
+                    is_enabled=True,
+                )
+                db.add(ds_config)
+            except json.JSONDecodeError:
+                logger.error("Failed to parse SEED_DATASOURCE_CONFIG json")
+        else:
+            house_ds = DataSourceConfig(
+                provider_type="house", name="House Stock Watcher",
+                config_json={}, is_enabled=True
             )
-            logger.info(f"Seeded Data Source provider: {settings.SEED_DATASOURCE_PROVIDER}")
-            db.add(ds_config)
-        except json.JSONDecodeError:
-            logger.error("Failed to parse SEED_DATASOURCE_CONFIG json")
-    else:
-        # By default, seed House and Senate providers so the app works out of the box
-        logger.info("Seeding default House and Senate Data Sources")
-        house_ds = DataSourceConfig(
-            provider_type="house", name="House Stock Watcher",
-            config_json={}, is_enabled=True
-        )
-        senate_ds = DataSourceConfig(
-            provider_type="senate", name="Senate Stock Watcher",
-            config_json={}, is_enabled=True
-        )
-        db.add(house_ds)
-        db.add(senate_ds)
+            senate_ds = DataSourceConfig(
+                provider_type="senate", name="Senate Stock Watcher",
+                config_json={}, is_enabled=True
+            )
+            db.add(house_ds)
+            db.add(senate_ds)
+        seeded = True
 
-    db.commit()
-    logger.info("Initial database seeding complete.")
-    return True
+    if seeded:
+        db.commit()
+        logger.info("Database seeding completed.")
+    return seeded

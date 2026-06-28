@@ -44,6 +44,8 @@ class PersonBase(BaseModel):
     committee_affiliations: Optional[List[str]] = []
     photo_url: Optional[str] = None
     description: Optional[str] = None
+    is_tracked: Optional[bool] = False
+    is_active: Optional[bool] = True
 
 
 class PersonOut(PersonBase):

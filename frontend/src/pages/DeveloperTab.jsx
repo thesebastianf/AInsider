@@ -27,64 +27,68 @@ export default function DeveloperTab() {
   }, [refetchLogs]);
 
   return (
-    <div className="px-5 py-5 space-y-5 animate-fade-in">
-      {/* ─── Dashboard Header ──────────────────────────── */}
-      <div className="flex items-center gap-2">
-        <Activity size={16} className="text-blue-400" />
-        <span className="text-sm font-semibold text-slate-200">System Dashboard</span>
-      </div>
-
-      {/* ─── Stats Grid ────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3">
-        <StatWidget
-          icon={BarChart3}
-          label="Trades"
-          value={stats?.total_trades ?? '–'}
-          color="#3b82f6"
-        />
-        <StatWidget
-          icon={Clock}
-          label="Uptime"
-          value={formatUptime(stats?.uptime_seconds)}
-          color="#10b981"
-        />
-        <StatWidget
-          icon={Users}
-          label="Persons"
-          value={stats?.total_persons ?? '–'}
-          color="#a855f7"
-        />
-        <StatWidget
-          icon={Cpu}
-          label="LLM"
-          value={stats?.llm_status === 'configured' ? '✅' : '⚠️'}
-          sub={stats?.llm_status}
-          color={stats?.llm_status === 'configured' ? '#10b981' : '#f59e0b'}
-        />
-      </div>
-
-      {/* ─── Status Row ────────────────────────────────── */}
-      <div className="glass-card p-3 flex items-center justify-between">
+    <div className="px-5 py-5 grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in items-start">
+      {/* ─── Dashboard Stats (1/3 width on large screens) ─── */}
+      <div className="lg:col-span-1 space-y-5">
         <div className="flex items-center gap-2">
-          <Database size={14} className="text-slate-400" />
-          <span className="text-xs text-slate-400">Database</span>
+          <Activity size={16} className="text-blue-400" />
+          <span className="text-sm font-semibold text-slate-200">System Dashboard</span>
         </div>
-        <span className="text-xs font-semibold text-emerald-400">
-          {stats?.db_status || 'checking...'}
-        </span>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 gap-3">
+          <StatWidget
+            icon={BarChart3}
+            label="Trades"
+            value={stats?.total_trades ?? '–'}
+            color="#3b82f6"
+          />
+          <StatWidget
+            icon={Clock}
+            label="Uptime"
+            value={formatUptime(stats?.uptime_seconds)}
+            color="#10b981"
+          />
+          <StatWidget
+            icon={Users}
+            label="Persons"
+            value={stats?.total_persons ?? '–'}
+            color="#a855f7"
+          />
+          <StatWidget
+            icon={Cpu}
+            label="LLM"
+            value={stats?.llm_status === 'configured' ? '✅' : '⚠️'}
+            sub={stats?.llm_status}
+            color={stats?.llm_status === 'configured' ? '#10b981' : '#f59e0b'}
+          />
+        </div>
+
+        {/* Status Rows */}
+        <div className="space-y-3">
+          <div className="glass-card p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Database size={14} className="text-slate-400" />
+              <span className="text-xs text-slate-400">Database</span>
+            </div>
+            <span className="text-xs font-semibold text-emerald-400">
+              {stats?.db_status || 'checking...'}
+            </span>
+          </div>
+
+          {stats?.last_pipeline_run && (
+            <div className="glass-card p-3 flex items-center justify-between">
+              <span className="text-xs text-slate-400">Last Pipeline Run</span>
+              <span className="text-xs text-slate-300">
+                {new Date(stats.last_pipeline_run).toLocaleString()}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {stats?.last_pipeline_run && (
-        <div className="glass-card p-3 flex items-center justify-between">
-          <span className="text-xs text-slate-400">Last Pipeline Run</span>
-          <span className="text-xs text-slate-300">
-            {new Date(stats.last_pipeline_run).toLocaleString()}
-          </span>
-        </div>
-      )}
-
-      {/* ─── Log Console ───────────────────────────────── */}
-      <div>
+      {/* ─── Log Console (2/3 width on large screens) ─────── */}
+      <div className="lg:col-span-2">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Live Logs</span>
           <span className="text-[10px] text-slate-600">{logsData?.logs?.length || 0} entries</span>

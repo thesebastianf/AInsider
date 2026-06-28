@@ -16,9 +16,11 @@ export default function App() {
   const ActivePage = tabs[activeTab];
 
   return (
-    <Layout activeTab={activeTab}>
+    <Layout 
+      activeTab={activeTab} 
+      bottomNav={<BottomNav activeTab={activeTab} onTabChange={setActiveTab} />}
+    >
       <ActivePage />
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
     </Layout>
   );
 }

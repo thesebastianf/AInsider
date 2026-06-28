@@ -32,10 +32,12 @@ def _get_or_create_person(db: Session, raw: RawTrade) -> TargetPerson:
             name=raw.person_name,
             category=raw.person_category,
             committee_affiliations=raw.committees,
+            is_tracked=False,  # Auto-created persons from feed start as available (untracked)
+            is_active=True,
         )
         db.add(person)
         db.flush()
-        logger.info(f"Created new person: {raw.person_name} ({raw.person_category})")
+        logger.info(f"Created available target person: {raw.person_name} ({raw.person_category})")
     return person
 
 
@@ -60,6 +62,30 @@ def _insert_trade(db: Session, person: TargetPerson, raw: RawTrade) -> Trade | N
         return None
 
 
+def refresh_person_activity(db: Session) -> int:
+    """Mark target persons with no trades in the last 365 days as inactive."""
+    from datetime import date, timedelta
+    cutoff_date = date.today() - timedelta(days=365)
+    
+    inactive_count = 0
+    active_persons = db.query(TargetPerson).filter(TargetPerson.is_active == True).all()
+    
+    for person in active_persons:
+        latest_trade = db.query(Trade).filter(Trade.target_person_id == person.id).order_by(Trade.trade_date.desc()).first()
+        if latest_trade and latest_trade.trade_date < cutoff_date:
+            person.is_active = False
+            inactive_count += 1
+            logger.info(f"Marked target person inactive (no trades in 365d): {person.name}")
+        elif not latest_trade and person.created_at and (date.today() - person.created_at.date()) > timedelta(days=365):
+            person.is_active = False
+            inactive_count += 1
+            logger.info(f"Marked target person inactive (no trades ever and created >365d ago): {person.name}")
+            
+    if inactive_count > 0:
+        db.commit()
+    return inactive_count
+
+
 def run_pipeline() -> dict:
     """Execute the complete data pipeline."""
     from app.routers.system import add_log
@@ -76,6 +102,14 @@ def run_pipeline() -> dict:
 
     db = SessionLocal()
     try:
+        # Run daily activity cleanup
+        try:
+            inactive_count = refresh_person_activity(db)
+            if inactive_count > 0:
+                add_log("INFO", f"Marked {inactive_count} target persons as inactive due to no recent trades")
+        except Exception as e:
+            logger.error(f"Failed to refresh person activity: {e}")
+
         # Step 1: Fetch trades
         raw_trades = fetch_trades()
         stats["fetched"] = len(raw_trades)
@@ -88,6 +122,10 @@ def run_pipeline() -> dict:
                 # Step 2: Get or create person
                 person = _get_or_create_person(db, raw)
                 db.commit()
+
+                # If the person is not actively tracked, skip their trades
+                if not person.is_tracked:
+                    continue
 
                 # Step 3: Insert trade (deduplication)
                 trade = _insert_trade(db, person, raw)

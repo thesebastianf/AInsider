@@ -32,6 +32,17 @@ export const getPersons = (params = {}) => {
 export const toggleFollow = (personId) =>
   request(`/persons/${personId}/follow`, { method: 'PUT' });
 
+export const createPerson = (data) =>
+  request('/persons', { method: 'POST', body: JSON.stringify(data) });
+
+export const getAvailablePersons = (params = {}) => {
+  const qs = new URLSearchParams(params).toString();
+  return request(`/persons/available/list${qs ? `?${qs}` : ''}`);
+};
+
+export const trackPerson = (id, isTracked = true) =>
+  request(`/persons/${id}/track?is_tracked=${isTracked}`, { method: 'PUT' });
+
 // ═══ Trades ══════════════════════════════════════════════════
 export const getTrades = (params = {}) => {
   const qs = new URLSearchParams(params).toString();

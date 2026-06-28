@@ -348,6 +348,12 @@ function DataSourceSection() {
 
   const currentFields = fieldsData?.[provType] || {};
   const DS_ICONS = { house: '🏛️', senate: '🏛️', quiver: '📈', sec13f: '🏦' };
+  const DS_URLS = {
+    house: 'https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json',
+    senate: 'https://senate-stock-watcher-data.s3-us-west-2.amazonaws.com/aggregate/all_transactions.json',
+    quiver: 'https://api.quiverquant.com (Requires API Key)',
+    sec13f: 'SEC EDGAR (13F RSS Feed / API)',
+  };
 
   return (
     <div className="space-y-3">
@@ -399,11 +405,14 @@ function DataSourceSection() {
             <span className="text-lg">{DS_ICONS[p.provider_type] || '📡'}</span>
             <div className="flex-1 min-w-0">
               <span className="text-sm font-medium text-slate-200 truncate block">{p.name}</span>
-              <p className="text-[11px] text-slate-500">
-                {p.provider_type}{p.last_fetch ? ` · Fetched ${new Date(p.last_fetch).toLocaleDateString()}` : ''}
+              <p className="text-[10px] text-slate-500 truncate mt-0.5" title={DS_URLS[p.provider_type]}>
+                {DS_URLS[p.provider_type] || p.provider_type}
+              </p>
+              <p className="text-[9px] text-slate-400 mt-1">
+                {p.last_fetch ? `Synced: ${new Date(p.last_fetch).toLocaleString()}` : 'Not synced yet'}
               </p>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               <button onClick={() => handleToggle(p)} title={p.is_enabled ? 'Disable' : 'Enable'}
                 className={`p-1.5 rounded-lg transition-colors ${
                   p.is_enabled ? 'text-emerald-400 hover:bg-emerald-500/15' : 'text-slate-600 hover:bg-slate-700/50'
@@ -441,11 +450,9 @@ function DataSourceSection() {
 // ═══ Main Settings Tab ═══════════════════════════════════════
 export default function SettingsTab() {
   return (
-    <div className="px-5 py-5 space-y-6 animate-fade-in">
+    <div className="px-5 py-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in items-start">
       <LLMSection />
-      <hr className="border-slate-800" />
       <NotifySection />
-      <hr className="border-slate-800" />
       <DataSourceSection />
     </div>
   );
