@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
-import { getPersons, toggleFollow, getAllPerformance, createPerson, getAvailablePersons, trackPerson } from '../api/client';
+import { getPersons, toggleFollow, getAllPerformance, createPerson, getAvailablePersons, trackPerson, toggleSubscription, getInsights } from '../api/client';
 import SearchBar from '../components/SearchBar';
 import CategoryPills from '../components/CategoryPills';
 import PersonCard from '../components/PersonCard';
@@ -26,6 +26,7 @@ export default function PortfoliosTab() {
 
   const { data: personsData, loading, error, refetch } = useApi(fetchPersons, [search, category]);
   const { data: perfData } = useApi(getAllPerformance, []);
+  const { data: insights } = useApi(getInsights, []);
 
   // Fetch available (untracked) persons when "+" menu is opened
   useEffect(() => {
@@ -50,6 +51,24 @@ export default function PortfoliosTab() {
       refetch();
     } catch (err) {
       console.error('Follow toggle failed:', err);
+    }
+  };
+
+  const handleSubscribe = async (personId) => {
+    try {
+      await toggleSubscription(personId);
+      refetch();
+    } catch (err) {
+      console.error('Subscription toggle failed:', err);
+    }
+  };
+
+  const handleUntrack = async (personId) => {
+    try {
+      await trackPerson(personId, false);
+      refetch();
+    } catch (err) {
+      console.error('Untrack failed:', err);
     }
   };
 
@@ -79,7 +98,88 @@ export default function PortfoliosTab() {
   };
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in space-y-4">
+      {/* Insights Row */}
+      {insights && (
+        <div className="px-5 pt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          
+          {/* Card 1: Most Active */}
+          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Most active</span>
+            <div className="flex items-center gap-2 mt-2">
+              <div className="w-8 h-8 rounded-full overflow-hidden border border-border shrink-0 bg-surface-2 flex items-center justify-center">
+                {insights.most_active?.photo_url ? (
+                  <img src={insights.most_active.photo_url} className="w-full h-full object-cover" alt="" />
+                ) : (
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">{insights.most_active?.name?.[0]}</div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold truncate" style={{ color: 'var(--text-bright)' }}>{insights.most_active?.name}</div>
+                <div className="text-[10px] text-cyan-400 font-semibold">{insights.most_active?.trades_count} trades</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Biggest Outperformer */}
+          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Biggest outperformer</span>
+            <div className="flex items-center gap-2 mt-2">
+              <div className="w-8 h-8 rounded-full overflow-hidden border border-border shrink-0 bg-surface-2 flex items-center justify-center">
+                {insights.biggest_outperformer?.photo_url ? (
+                  <img src={insights.biggest_outperformer.photo_url} className="w-full h-full object-cover" alt="" />
+                ) : (
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">{insights.biggest_outperformer?.name?.[0]}</div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold truncate" style={{ color: 'var(--text-bright)' }}>{insights.biggest_outperformer?.name}</div>
+                <div className="text-[10px] text-green-500 font-bold">{insights.biggest_outperformer?.perf_vs_spy}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Hot Stock */}
+          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Hot stock (60d)</span>
+            <div className="flex items-center gap-2 mt-2">
+              <div className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${insights.hot_stock?.perf_pct?.startsWith('+') ? 'bg-green-500/15 text-green-500' : 'bg-red-500/15 text-red-500'} border border-transparent`}>
+                {insights.hot_stock?.ticker}
+              </div>
+              <div className="min-w-0">
+                <div className={`text-xs font-bold ${insights.hot_stock?.perf_pct?.startsWith('+') ? 'text-green-500' : 'text-red-500'}`}>{insights.hot_stock?.perf_pct}</div>
+                <div className="text-[10px] text-slate-500">{insights.hot_stock?.trades_count} trades · 60d</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: Disclosure Lag */}
+          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Disclosure lag</span>
+            <div className="mt-1">
+              <div className="text-xs font-bold" style={{ color: 'var(--text-bright)' }}>
+                {insights.disclosure_lag?.median_days}d <span className="text-[10px] text-slate-500 font-normal">median</span>
+              </div>
+              <div className="text-[10px] text-amber-500 font-semibold mt-0.5">
+                {insights.disclosure_lag?.late_pct}% late
+              </div>
+            </div>
+          </div>
+
+          {/* Card 5: Biggest Single Trade */}
+          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Biggest single trade</span>
+            <div className="mt-1">
+              <div className="text-xs font-bold text-cyan-400">{insights.biggest_trade?.amount}</div>
+              <div className="text-[9px] text-slate-500 truncate">
+                {insights.biggest_trade?.person_name} · {insights.biggest_trade?.date}
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
+
       <div className="flex items-center gap-2 pr-5">
         <div className="flex-1">
           <SearchBar onSearch={setSearch} />
@@ -207,6 +307,8 @@ export default function PortfoliosTab() {
                 person={person}
                 performance={perfMap}
                 onToggleFollow={handleFollow}
+                onToggleSubscribe={handleSubscribe}
+                onUntrack={handleUntrack}
               />
             </div>
           ))

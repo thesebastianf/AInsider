@@ -72,8 +72,38 @@ SEED_PERSONS = [
     {
         "name": "Cathie Wood", "category": "Fund Manager", 
         "committees": ["ARK Invest"],
-        "photo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Cathie_Wood_%-_World_Economic_Forum_Annual_Meeting_2024.jpg/320px-Cathie_Wood_%-_World_Economic_Forum_Annual_Meeting_2024.jpg",
+        "photo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Cathie_Wood_-_World_Economic_Forum_Annual_Meeting_2024.jpg/320px-Cathie_Wood_-_World_Economic_Forum_Annual_Meeting_2024.jpg",
         "description": "Focuses purely on disruptive innovation. High volatility portfolio including genomics, AI, blockchain, and space exploration."
+    },
+    {
+        "name": "Warren Buffett", "category": "Fund Manager",
+        "committees": ["Berkshire Hathaway"],
+        "photo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Warren_Buffett_at_the_2015_SelectUSA_Investment_Summit.jpg/320px-Warren_Buffett_at_the_2015_SelectUSA_Investment_Summit.jpg",
+        "description": "Legendary value investor, Chairman and CEO of Berkshire Hathaway. Known for long-term investments in high-quality businesses."
+    },
+    {
+        "name": "Elon Musk", "category": "Corporate Insider",
+        "committees": ["Tesla", "SpaceX"],
+        "photo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9d/Elon_Musk_Colorado_2022_%28cropped%29.jpg/320px-Elon_Musk_Colorado_2022_%28cropped%29.jpg",
+        "description": "CEO @ Tesla. Known for high-profile stock sales and option exercises."
+    },
+    {
+        "name": "Jensen Huang", "category": "Corporate Insider",
+        "committees": ["NVIDIA"],
+        "photo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c4/Jensen_Huang_at_CES_2018_%28cropped%29.jpg/320px-Jensen_Huang_at_CES_2018_%28cropped%29.jpg",
+        "description": "CEO & Founder @ NVIDIA. Highly tracked for his systematic sales of NVIDIA stock."
+    },
+    {
+        "name": "Oliver Dörre", "category": "Corporate Insider",
+        "committees": ["HENSOLDT AG"],
+        "photo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/User_icon_2.svg/320px-User_icon_2.svg.png",
+        "description": "CEO @ HENSOLDT AG. Regular purchaser of HENSOLDT shares under European directors' dealings disclosures."
+    },
+    {
+        "name": "Christian Sewing", "category": "Corporate Insider",
+        "committees": ["Deutsche Bank AG"],
+        "photo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/User_icon_2.svg/320px-User_icon_2.svg.png",
+        "description": "CEO @ Deutsche Bank AG. Regularly acquires Deutsche Bank stock as part of investment and compensation disclosures."
     },
 ]
 
@@ -82,11 +112,12 @@ def seed_database(db: Session) -> bool:
     """Seed the database with initial configurations and target persons if they are missing."""
     seeded = False
 
-    # 1. Seed Target Persons
-    existing_persons = db.query(TargetPerson).count()
-    if existing_persons == 0:
-        logger.info("Seeding target persons...")
-        for p in SEED_PERSONS:
+    # 1. Seed Target Persons individually if missing
+    logger.info("Checking target persons...")
+    for p in SEED_PERSONS:
+        existing = db.query(TargetPerson).filter(TargetPerson.name == p["name"]).first()
+        if not existing:
+            logger.info(f"Seeding target person: {p['name']}")
             person = TargetPerson(
                 name=p["name"], category=p["category"],
                 committee_affiliations=p["committees"],
@@ -94,12 +125,10 @@ def seed_database(db: Session) -> bool:
                 description=p.get("description"),
                 is_tracked=True,
                 is_active=True,
-                is_followed=p["name"] in ["Nancy Pelosi", "Tommy Tuberville"],
+                is_followed=p["name"] in ["Nancy Pelosi", "Tommy Tuberville", "Warren Buffett", "Jensen Huang"],
             )
             db.add(person)
-        seeded = True
-    else:
-        logger.info(f"Target persons already seeded ({existing_persons})")
+            seeded = True
 
     # 2. Seed LLM config
     existing_llm = db.query(LLMConfig).count()
@@ -142,44 +171,24 @@ def seed_database(db: Session) -> bool:
             logger.error("Failed to parse SEED_NOTIFY_CONFIG json")
 
     # 4. Seed Data Source config
-    existing_ds = db.query(DataSourceConfig).count()
-    if existing_ds == 0:
-        logger.info("Seeding default Data Sources...")
-        if settings.SEED_DATASOURCE_PROVIDER:
-            import json
-            try:
-                config_json = json.loads(settings.SEED_DATASOURCE_CONFIG or "{}")
-                ds_config = DataSourceConfig(
-                    provider_type=settings.SEED_DATASOURCE_PROVIDER,
-                    name=f"Seeded {settings.SEED_DATASOURCE_PROVIDER.title()}",
-                    config_json=config_json,
-                    is_enabled=True,
-                )
-                db.add(ds_config)
-            except json.JSONDecodeError:
-                logger.error("Failed to parse SEED_DATASOURCE_CONFIG json")
-        else:
-            house_ds = DataSourceConfig(
-                provider_type="house", name="House Stock Watcher",
+    logger.info("Checking default Data Sources...")
+    default_sources = [
+        ("house", "House Stock Watcher"),
+        ("senate", "Senate Stock Watcher"),
+        ("sec13f", "SEC 13F (Fund Managers)"),
+        ("sec_form4", "SEC Form 4 (Corporate Insiders)"),
+        ("directors_dealings", "Directors' Dealings (DAX / Europe)"),
+    ]
+    for p_type, name in default_sources:
+        existing = db.query(DataSourceConfig).filter(DataSourceConfig.provider_type == p_type).first()
+        if not existing:
+            logger.info(f"Seeding default Data Source: {name}")
+            ds_config = DataSourceConfig(
+                provider_type=p_type, name=name,
                 config_json={}, is_enabled=True
             )
-            senate_ds = DataSourceConfig(
-                provider_type="senate", name="Senate Stock Watcher",
-                config_json={}, is_enabled=True
-            )
-            sec13f_ds = DataSourceConfig(
-                provider_type="sec13f", name="SEC 13F (Fund Managers)",
-                config_json={}, is_enabled=True
-            )
-            sec_form4_ds = DataSourceConfig(
-                provider_type="sec_form4", name="SEC Form 4 (Corporate Insiders)",
-                config_json={}, is_enabled=True
-            )
-            db.add(house_ds)
-            db.add(senate_ds)
-            db.add(sec13f_ds)
-            db.add(sec_form4_ds)
-        seeded = True
+            db.add(ds_config)
+            seeded = True
 
     if seeded:
         db.commit()

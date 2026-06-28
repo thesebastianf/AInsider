@@ -53,6 +53,7 @@ class PersonBase(BaseModel):
 class PersonOut(PersonBase):
     id: int
     is_followed: bool = False
+    is_subscribed: bool = False
     latest_trade: Optional[TradeOut] = None
     trade_count: int = 0
 

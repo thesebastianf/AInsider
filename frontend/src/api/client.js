@@ -43,6 +43,9 @@ export const getAvailablePersons = (params = {}) => {
 export const trackPerson = (id, isTracked = true) =>
   request(`/persons/${id}/track?is_tracked=${isTracked}`, { method: 'PUT' });
 
+export const toggleSubscription = (personId) =>
+  request(`/persons/${personId}/subscribe`, { method: 'PUT' });
+
 // ═══ Trades ══════════════════════════════════════════════════
 export const getTrades = (params = {}) => {
   const qs = new URLSearchParams(params).toString();
@@ -92,3 +95,4 @@ export const getSystemLogs = (limit = 100) => request(`/system/logs?limit=${limi
 export const triggerPipeline = () =>
   request('/system/trigger-pipeline', { method: 'POST' });
 export const healthCheck = () => request('/health');
+export const getInsights = () => request('/system/insights');

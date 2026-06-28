@@ -347,13 +347,14 @@ function DataSourceSection() {
   };
 
   const currentFields = fieldsData?.[provType] || {};
-  const DS_ICONS = { house: '🏛️', senate: '🏛️', quiver: '📈', sec13f: '🏦', sec_form4: '🏢' };
+  const DS_ICONS = { house: '🏛️', senate: '🏛️', quiver: '📈', sec13f: '🏦', sec_form4: '🏢', directors_dealings: '🇪🇺' };
   const DS_URLS = {
-    house: 'https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json',
-    senate: 'https://senate-stock-watcher-data.s3-us-west-2.amazonaws.com/aggregate/all_transactions.json',
+    house: 'https://congress.kadoa.com/data/trades.json',
+    senate: 'https://raw.githubusercontent.com/timothycarambat/senate-stock-watcher-data/master/aggregate/all_transactions.json',
     quiver: 'https://api.quiverquant.com (Requires API Key)',
     sec13f: 'SEC EDGAR (13F RSS Feed / API)',
     sec_form4: 'https://www.sec.gov/cgi-bin/browse-edgar (Form 4 Atom Feed)',
+    directors_dealings: 'https://www.wallstreet-online.de/rss/nachrichten-directors-dealings.xml',
   };
 
   const DS_DESCS = {
@@ -362,6 +363,7 @@ function DataSourceSection() {
     quiver: 'Alternative data service tracking politician trades, lobbying activities, and government contracts. Requires an API Key.',
     sec13f: 'Official quarterly holdings reports (Form 13F) filed by major institutional fund managers to the US SEC EDGAR system.',
     sec_form4: 'Real-time statement of changes in beneficial ownership of securities (Form 4) filed by corporate directors, officers, and CEOs to the US SEC EDGAR system.',
+    directors_dealings: 'Real-time management transaction reports (Directors\' Dealings) filed by DAX / European corporate board members and executives.',
   };
 
   return (
@@ -380,7 +382,7 @@ function DataSourceSection() {
       {showAdd && (
         <div className="glass-card p-4 space-y-3 animate-slide-up">
           <div className="flex flex-wrap gap-1.5">
-            {['house', 'senate', 'quiver', 'sec13f', 'sec_form4'].map(t => (
+            {['house', 'senate', 'quiver', 'sec13f', 'sec_form4', 'directors_dealings'].map(t => (
               <button key={t} onClick={() => setProvType(t)}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
                   provType === t ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'
@@ -427,8 +429,18 @@ function DataSourceSection() {
               <p className="text-[10px] text-slate-500 truncate mt-0.5" title={DS_URLS[p.provider_type]}>
                 {DS_URLS[p.provider_type] || p.provider_type}
               </p>
-              <p className="text-[9px] text-slate-400 mt-1">
-                {p.last_fetch ? `Synced: ${new Date(p.last_fetch).toLocaleString()}` : 'Not synced yet'}
+              <p className="text-[9px] text-slate-400 mt-1 flex flex-wrap items-center gap-1.5">
+                <span>{p.last_fetch ? `Synced: ${new Date(p.last_fetch).toLocaleString()}` : 'Not synced yet'}</span>
+                {p.config_json?.last_status === 'success' && (
+                  <span className="px-1 py-0.5 rounded text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/10 font-bold font-mono">
+                    +{p.config_json.last_count} rows
+                  </span>
+                )}
+                {p.config_json?.last_status === 'error' && (
+                  <span className="px-1 py-0.5 rounded text-[8px] bg-red-500/10 text-red-400 border border-red-500/10 font-bold font-mono truncate max-w-[150px]" title={p.config_json.last_error}>
+                    Error: {p.config_json.last_error}
+                  </span>
+                )}
               </p>
             </div>
             <div className="flex items-center gap-1 shrink-0">

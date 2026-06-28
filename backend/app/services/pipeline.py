@@ -175,7 +175,7 @@ def run_pipeline() -> dict:
                         Subscription.target_person_id == person.id
                     ).count() > 0
 
-                    if person.is_followed or has_subs:
+                    if has_subs:
                         notify_all_enabled(
                             db=db,
                             person_name=person.name,

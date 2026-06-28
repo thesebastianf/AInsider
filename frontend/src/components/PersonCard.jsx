@@ -1,7 +1,7 @@
-import { Star, TrendingUp, TrendingDown, User } from 'lucide-react';
+import { Star, Bell, Trash2, TrendingUp, TrendingDown, User } from 'lucide-react';
 import AIScoreBadge from './AIScoreBadge';
 
-export default function PersonCard({ person, performance, onToggleFollow }) {
+export default function PersonCard({ person, performance, onToggleFollow, onToggleSubscribe, onUntrack }) {
   const trade = person.latest_trade;
   const perf = trade ? performance?.[trade.ticker] : null;
 
@@ -13,7 +13,7 @@ export default function PersonCard({ person, performance, onToggleFollow }) {
         <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-bl-[100px] pointer-events-none transition-opacity duration-500" />
       )}
       
-      <div className="flex justify-between items-start mb-4 relative z-10">
+      <div className="flex justify-between items-start mb-4 relative z-10 gap-2">
         <div className="flex gap-4">
           {/* Avatar Photo */}
           <div className="w-14 h-14 rounded-full overflow-hidden bg-surface-2 border-2 border-border shrink-0 flex items-center justify-center">
@@ -45,16 +45,43 @@ export default function PersonCard({ person, performance, onToggleFollow }) {
             )}
           </div>
         </div>
-        <button 
-          onClick={() => onToggleFollow(person.id)} 
-          className="p-2 bg-surface-2 rounded-full hover:bg-surface-3 transition-colors z-20 shrink-0 border border-border"
-        >
-          <Star className={`h-4 w-4 transition-all ${
-            person.is_followed 
-              ? 'text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' 
-              : 'text-slate-400 dark:text-slate-500'
-          }`} />
-        </button>
+        
+        <div className="flex items-center gap-1 z-20 shrink-0">
+          {/* Follow Button */}
+          <button 
+            onClick={() => onToggleFollow(person.id)} 
+            className="p-1.5 bg-surface-2 rounded-full hover:bg-surface-3 transition-colors border border-border"
+            title={person.is_followed ? "Unfollow" : "Follow"}
+          >
+            <Star className={`h-3.5 w-3.5 transition-all ${
+              person.is_followed 
+                ? 'text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' 
+                : 'text-slate-400 dark:text-slate-500'
+            }`} />
+          </button>
+
+          {/* Subscribe Button */}
+          <button 
+            onClick={() => onToggleSubscribe(person.id)} 
+            className="p-1.5 bg-surface-2 rounded-full hover:bg-surface-3 transition-colors border border-border"
+            title={person.is_subscribed ? "Unsubscribe from alerts" : "Subscribe to alerts"}
+          >
+            <Bell className={`h-3.5 w-3.5 transition-all ${
+              person.is_subscribed 
+                ? 'text-cyan-500 fill-cyan-500/20 drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]' 
+                : 'text-slate-400 dark:text-slate-500'
+            }`} />
+          </button>
+
+          {/* Untrack Button */}
+          <button 
+            onClick={() => onUntrack(person.id)} 
+            className="p-1.5 bg-surface-2 rounded-full hover:bg-red-500/10 hover:border-red-500/30 text-slate-400 hover:text-red-500 transition-colors border border-border"
+            title="Remove from portfolios"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
       
       {trade ? (

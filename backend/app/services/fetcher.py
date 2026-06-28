@@ -45,9 +45,9 @@ class BaseDataSourceProvider(ABC):
 
 
 class HouseStockWatcherProvider(BaseDataSourceProvider):
-    """Fetches real trades from House Stock Watcher API."""
+    """Fetches real trades from House Stock Watcher API (mirrored via Kadoa)."""
     
-    URL = "https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json"
+    URL = "https://congress.kadoa.com/data/trades.json"
 
     def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
         trades = []
@@ -59,25 +59,25 @@ class HouseStockWatcherProvider(BaseDataSourceProvider):
             resp.raise_for_status()
             data = resp.json()
 
-            recent = sorted(data, key=lambda x: x.get("transaction_date", ""), reverse=True)[:limit]
+            # Filter for House trades only (filer.type == "house")
+            house_data = [item for item in data if (item.get("filer") or {}).get("type") == "house"]
+            recent = sorted(house_data, key=lambda x: x.get("transaction_date", ""), reverse=True)[:limit]
 
             for item in recent:
                 try:
-                    ticker = item.get("ticker", "").strip()
+                    ticker = item.get("ticker")
                     if not ticker or ticker == "--" or len(ticker) > 10:
                         continue
+                    ticker = ticker.strip().upper()
 
-                    trade_date_str = item.get("transaction_date", "")
-                    if not trade_date_str:
+                    t_date_str = item.get("transaction_date", "")
+                    if not t_date_str:
                         continue
 
-                    parts = trade_date_str.split("-")
-                    if len(parts) == 3:
-                        td = date(int(parts[0]), int(parts[1]), int(parts[2]))
-                    else:
-                        continue
+                    # Parse date YYYY-MM-DD
+                    td = date.fromisoformat(t_date_str)
 
-                    trade_type_raw = item.get("type", "").upper()
+                    trade_type_raw = item.get("transaction_type", "").upper()
                     if "PURCHASE" in trade_type_raw or "BUY" in trade_type_raw:
                         trade_type = "BUY"
                     elif "SALE" in trade_type_raw or "SELL" in trade_type_raw:
@@ -86,15 +86,15 @@ class HouseStockWatcherProvider(BaseDataSourceProvider):
                         continue
 
                     trade = RawTrade(
-                        person_name=item.get("representative", "Unknown"),
+                        person_name=(item.get("filer") or {}).get("name", "Unknown"),
                         person_category="Congress",
                         committees=[],
-                        ticker=ticker.upper(),
+                        ticker=ticker,
                         trade_type=trade_type,
                         amount_range=item.get("amount", "$1,001-$15,000"),
                         trade_date=td,
                         filing_date=None,
-                        source_url=item.get("ptr_link"),
+                        source_url=None,
                     )
                     trades.append(trade)
                 except Exception as e:
@@ -113,9 +113,9 @@ class HouseStockWatcherProvider(BaseDataSourceProvider):
 
 
 class SenateStockWatcherProvider(BaseDataSourceProvider):
-    """Fetches real trades from Senate Stock Watcher API."""
+    """Fetches real trades from Senate Stock Watcher API (mirrored via GitHub)."""
     
-    URL = "https://senate-stock-watcher-data.s3-us-west-2.amazonaws.com/aggregate/all_transactions.json"
+    URL = "https://raw.githubusercontent.com/timothycarambat/senate-stock-watcher-data/master/aggregate/all_transactions.json"
 
     def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
         trades = []
@@ -344,6 +344,123 @@ class SECForm4Provider(BaseDataSourceProvider):
             except Exception:
                 pass
                 
+class DirectorsDealingsProvider(BaseDataSourceProvider):
+    """Fetches and parses real European Directors' Dealings news from Wallstreet Online RSS feed."""
+    
+    URL = "https://www.wallstreet-online.de/rss/nachrichten-directors-dealings.xml"
+
+    def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
+        import xml.etree.ElementTree as ET
+        import re
+        
+        trades = []
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            resp = httpx.get(self.URL, headers=headers, timeout=30.0)
+            resp.raise_for_status()
+            
+            root = ET.fromstring(resp.content)
+            channel = root.find("channel")
+            if channel is None:
+                return []
+                
+            items = channel.findall("item")
+            recent = items[:limit]
+            
+            for item in recent:
+                try:
+                    title = item.find("title").text or ""
+                    # E.g. "EQS-DD: DATRON AG: PCI Private Capital Investment GmbH, Kauf"
+                    if not title.startswith("EQS-DD:"):
+                        continue
+                    
+                    parts = title.split(":")
+                    if len(parts) < 3:
+                        continue
+                        
+                    company_name = parts[1].strip()
+                    rest = ":".join(parts[2:]).strip()
+                    
+                    if "," in rest:
+                        manager_name, trans_type_raw = rest.rsplit(",", 1)
+                        manager_name = manager_name.strip()
+                        trans_type_raw = trans_type_raw.strip().upper()
+                    else:
+                        manager_name = rest
+                        trans_type_raw = "BUY"
+                        
+                    if "VERKAUF" in trans_type_raw or "SELL" in trans_type_raw:
+                        trade_type = "SELL"
+                    else:
+                        trade_type = "BUY"
+                        
+                    # Extract ticker from company name (first word uppercase)
+                    ticker = company_name.split()[0].upper()
+                    for suffix in ["AG", "SE", "KGAA", "PLC", "INC", "CORP", "GMBH"]:
+                        if ticker.endswith(suffix):
+                            ticker = ticker[:-len(suffix)]
+                    ticker = "".join(c for c in ticker if c.isalnum())
+                    if not ticker:
+                        ticker = "GERMANY"
+                        
+                    # Parse date
+                    date_element = item.find("{http://purl.org/dc/elements/1.1/}date")
+                    if date_element is not None and date_element.text:
+                        t_date = datetime.fromisoformat(date_element.text.strip()).date()
+                    else:
+                        t_date = date.today()
+                        
+                    # Fetch article content to extract exact volume
+                    link = item.find("link").text or ""
+                    amount_range = "> €50,000"
+                    try:
+                        article_resp = httpx.get(link, headers=headers, timeout=3.0)
+                        if article_resp.status_code == 200:
+                            amounts_raw = re.findall(r"([\d\.,]+)\s*(?:EUR|€)", article_resp.text)
+                            floats = []
+                            for val in amounts_raw:
+                                cleaned = val.replace(".", "").replace(",", ".")
+                                try:
+                                    floats.append(float(cleaned))
+                                except ValueError:
+                                    pass
+                            if floats:
+                                max_val = max(floats)
+                                if max_val >= 1000000:
+                                    amount_range = f"€{max_val / 1000000:.1f}M"
+                                elif max_val >= 1000:
+                                    amount_range = f"€{max_val / 1000:.0f}K"
+                                else:
+                                    amount_range = f"€{max_val:.0f}"
+                    except Exception:
+                        pass
+                        
+                    trade = RawTrade(
+                        person_name=manager_name,
+                        person_category="Corporate Insider",
+                        committees=[company_name],
+                        ticker=ticker,
+                        trade_type=trade_type,
+                        amount_range=amount_range,
+                        trade_date=t_date,
+                        filing_date=t_date,
+                        source_url=link,
+                    )
+                    trades.append(trade)
+                    logger.info(f"Directors Dealings parsed: {manager_name} ({company_name}) {trade_type} {ticker}")
+                except Exception as e:
+                    logger.warning(f"DirectorsDealingsProvider: Skipping entry: {e}")
+                    continue
+        except Exception as e:
+            logger.error(f"DirectorsDealingsProvider: Failed to parse feed: {e}")
+            try:
+                from app.routers.system import add_log
+                add_log("ERROR", f"DirectorsDealingsProvider fetch failed: {str(e)[:150]}")
+            except Exception:
+                pass
+                
         return trades
 
 
@@ -353,6 +470,7 @@ PROVIDER_CLASSES = {
     "quiver": QuiverQuantProvider,
     "sec13f": SEC13FProvider,
     "sec_form4": SECForm4Provider,
+    "directors_dealings": DirectorsDealingsProvider,
 }
 
 
@@ -386,18 +504,29 @@ def fetch_trades() -> List[RawTrade]:
                 
             logger.info(f"Fetching from data source: {source.name} ({source.provider_type})")
             provider = provider_cls(source)
+            
+            cfg = dict(source.config_json or {})
             try:
                 trades = provider.fetch_trades(limit=2000)
                 all_trades.extend(trades)
-                # Update last fetch time
                 source.last_fetch = datetime.now()
+                cfg["last_status"] = "success"
+                cfg["last_count"] = len(trades)
+                cfg["last_error"] = None
             except Exception as e:
                 logger.error(f"Error fetching from data source {source.name}: {e}")
+                cfg["last_status"] = "error"
+                cfg["last_count"] = 0
+                cfg["last_error"] = str(e)[:150]
                 try:
                     from app.routers.system import add_log
                     add_log("ERROR", f"Failed fetching data source '{source.name}': {str(e)[:150]}")
                 except Exception:
                     pass
+            
+            from sqlalchemy.orm.attributes import flag_modified
+            source.config_json = cfg
+            flag_modified(source, "config_json")
             
         db.commit()
     finally:

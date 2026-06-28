@@ -50,12 +50,23 @@ def _build_person_response(person: TargetPerson, db: Session) -> PersonOut:
         .scalar()
     )
 
+    from app.models import Subscription
+    is_subscribed = (
+        db.query(Subscription)
+        .filter(
+            Subscription.target_person_id == person.id,
+            Subscription.user_id == "default"
+        )
+        .first() is not None
+    )
+
     return PersonOut(
         id=person.id,
         name=person.name,
         category=person.category,
         committee_affiliations=person.committee_affiliations or [],
         is_followed=person.is_followed,
+        is_subscribed=is_subscribed,
         latest_trade=TradeOut.model_validate(latest_trade) if latest_trade else None,
         trade_count=trade_count or 0,
     )
@@ -145,3 +156,29 @@ def toggle_follow(person_id: int, db: Session = Depends(get_db)):
     db.refresh(person)
 
     return {"id": person.id, "is_followed": person.is_followed}
+
+
+@router.put("/{person_id}/subscribe")
+def toggle_subscription(person_id: int, db: Session = Depends(get_db)):
+    """Toggle the notification subscription status of a person for user 'default'."""
+    from app.models import Subscription
+    
+    person = db.query(TargetPerson).filter(TargetPerson.id == person_id).first()
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+
+    existing = db.query(Subscription).filter(
+        Subscription.user_id == "default",
+        Subscription.target_person_id == person.id
+    ).first()
+
+    if existing:
+        db.delete(existing)
+        is_sub = False
+    else:
+        db_sub = Subscription(user_id="default", target_person_id=person.id)
+        db.add(db_sub)
+        is_sub = True
+
+    db.commit()
+    return {"id": person.id, "is_subscribed": is_sub}
