@@ -114,9 +114,9 @@ def get_insights(db: Session = Depends(get_db)):
             
     if not most_active:
         most_active = {
-            "name": "Josh Gottheimer",
-            "photo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Josh_Gottheimer_official_photo_118th_Congress.jpg/320px-Josh_Gottheimer_official_photo_118th_Congress.jpg",
-            "trades_count": 86
+            "name": "No trades recorded",
+            "photo_url": None,
+            "trades_count": 0
         }
 
     # 2. Biggest Outperformer
@@ -148,9 +148,9 @@ def get_insights(db: Session = Depends(get_db)):
         
     if not outperf:
         outperf = {
-            "name": "Roger W. Marshall",
-            "photo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Roger_Marshall_portrait.jpg/320px-Roger_Marshall_portrait.jpg",
-            "perf_vs_spy": "+807% vs SPY"
+            "name": "No trades recorded",
+            "photo_url": None,
+            "perf_vs_spy": "N/A"
         }
 
     # 3. Hot Stock (60d)
@@ -170,7 +170,7 @@ def get_insights(db: Session = Depends(get_db)):
             perf_pct = ap.ytd_performance_pct if ap else 0.0
             hot_stock = {
                 "ticker": tick,
-                "perf_pct": f"{perf_pct:+.1f}%" if perf_pct else "-3.5%",
+                "perf_pct": f"{perf_pct:+.1f}%" if perf_pct else "0.0%",
                 "trades_count": cnt
             }
     except Exception:
@@ -178,15 +178,15 @@ def get_insights(db: Session = Depends(get_db)):
         
     if not hot_stock:
         hot_stock = {
-            "ticker": "MSFT",
-            "perf_pct": "-3.5%",
-            "trades_count": 8
+            "ticker": "N/A",
+            "perf_pct": "N/A",
+            "trades_count": 0
         }
 
     # 4. Disclosure Lag
     disclosure_lag = {
-        "median_days": 29,
-        "late_pct": 20
+        "median_days": "N/A",
+        "late_pct": "N/A"
     }
     try:
         lags = []
@@ -203,8 +203,8 @@ def get_insights(db: Session = Depends(get_db)):
             median = lags[len(lags) // 2]
             late_pct = int((late_count / len(lags)) * 100)
             disclosure_lag = {
-                "median_days": median,
-                "late_pct": late_pct
+                "median_days": str(median),
+                "late_pct": f"{late_pct}%"
             }
     except Exception:
         pass
@@ -243,10 +243,10 @@ def get_insights(db: Session = Depends(get_db)):
         
     if not biggest_trade:
         biggest_trade = {
-            "amount": "$75.0M",
-            "person_name": "Michael T. McCaul",
-            "ticker": "MSFT",
-            "date": "2026-02-19"
+            "amount": "N/A",
+            "person_name": "No trades recorded",
+            "ticker": "",
+            "date": ""
         }
 
     return {

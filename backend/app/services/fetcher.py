@@ -59,8 +59,8 @@ class HouseStockWatcherProvider(BaseDataSourceProvider):
             resp.raise_for_status()
             data = resp.json()
 
-            # Filter for House trades only (filer.type == "house")
-            house_data = [item for item in data if (item.get("filer") or {}).get("type") == "house"]
+            # Filter for House trades only (chamber == "house")
+            house_data = [item for item in data if item.get("chamber") == "house"]
             recent = sorted(house_data, key=lambda x: x.get("transaction_date", ""), reverse=True)[:limit]
 
             for item in recent:
@@ -86,15 +86,15 @@ class HouseStockWatcherProvider(BaseDataSourceProvider):
                         continue
 
                     trade = RawTrade(
-                        person_name=(item.get("filer") or {}).get("name", "Unknown"),
+                        person_name=item.get("filer_name", "Unknown"),
                         person_category="Congress",
                         committees=[],
                         ticker=ticker,
                         trade_type=trade_type,
-                        amount_range=item.get("amount", "$1,001-$15,000"),
+                        amount_range=item.get("amount_range_label", "$1,001-$15,000"),
                         trade_date=td,
-                        filing_date=None,
-                        source_url=None,
+                        filing_date=date.fromisoformat(item.get("filing_date")) if item.get("filing_date") else None,
+                        source_url=item.get("doc_url"),
                     )
                     trades.append(trade)
                 except Exception as e:
@@ -214,7 +214,7 @@ class SECForm4Provider(BaseDataSourceProvider):
     def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
         trades = []
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "AInsiderTrackerAdmin admin@ainsidertracker.com"
         }
         
         try:
@@ -343,7 +343,9 @@ class SECForm4Provider(BaseDataSourceProvider):
                 add_log("ERROR", f"SECForm4Provider fetch failed: {str(e)[:150]}")
             except Exception:
                 pass
-                
+        return trades
+
+
 class DirectorsDealingsProvider(BaseDataSourceProvider):
     """Fetches and parses real European Directors' Dealings news from Wallstreet Online RSS feed."""
     

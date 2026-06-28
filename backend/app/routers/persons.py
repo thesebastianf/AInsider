@@ -37,7 +37,9 @@ def create_person(data: PersonBase, db: Session = Depends(get_db)):
 
 
 def _build_person_response(person: TargetPerson, db: Session) -> PersonOut:
-    """Build a PersonOut response including the latest trade."""
+    """Build a PersonOut response including the latest trade and statistics."""
+    from datetime import date, timedelta
+    
     latest_trade = (
         db.query(Trade)
         .filter(Trade.target_person_id == person.id)
@@ -48,7 +50,28 @@ def _build_person_response(person: TargetPerson, db: Session) -> PersonOut:
         db.query(func.count(Trade.id))
         .filter(Trade.target_person_id == person.id)
         .scalar()
-    )
+    ) or 0
+
+    trade_count_30d = (
+        db.query(func.count(Trade.id))
+        .filter(
+            Trade.target_person_id == person.id,
+            Trade.trade_date >= date.today() - timedelta(days=30)
+        )
+        .scalar()
+    ) or 0
+
+    buy_count = (
+        db.query(func.count(Trade.id))
+        .filter(Trade.target_person_id == person.id, Trade.type == "BUY")
+        .scalar()
+    ) or 0
+
+    sell_count = (
+        db.query(func.count(Trade.id))
+        .filter(Trade.target_person_id == person.id, Trade.type == "SELL")
+        .scalar()
+    ) or 0
 
     from app.models import Subscription
     is_subscribed = (
@@ -68,7 +91,10 @@ def _build_person_response(person: TargetPerson, db: Session) -> PersonOut:
         is_followed=person.is_followed,
         is_subscribed=is_subscribed,
         latest_trade=TradeOut.model_validate(latest_trade) if latest_trade else None,
-        trade_count=trade_count or 0,
+        trade_count=trade_count,
+        trade_count_30d=trade_count_30d,
+        buy_count=buy_count,
+        sell_count=sell_count,
     )
 
 

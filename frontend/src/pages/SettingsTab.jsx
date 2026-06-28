@@ -293,6 +293,7 @@ function DataSourceSection() {
   const [name, setName] = useState('');
   const [configFields, setConfigFields] = useState({});
   const [syncing, setSyncing] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
 
   // Fetch fields lazily
   useEffect(() => {
@@ -437,8 +438,17 @@ function DataSourceSection() {
                   </span>
                 )}
                 {p.config_json?.last_status === 'error' && (
-                  <span className="px-1 py-0.5 rounded text-[8px] bg-red-500/10 text-red-400 border border-red-500/10 font-bold font-mono truncate max-w-[150px]" title={p.config_json.last_error}>
-                    Error: {p.config_json.last_error}
+                  <span 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(p.config_json.last_error || '');
+                      setCopiedId(p.id);
+                      setTimeout(() => setCopiedId(null), 2000);
+                    }}
+                    title="Click to copy full error message"
+                    className="px-1 py-0.5 rounded text-[8px] bg-red-500/10 text-red-400 border border-red-500/10 font-bold font-mono truncate max-w-[150px] cursor-pointer hover:bg-red-500/20 active:bg-red-500/30 transition-all select-none"
+                  >
+                    {copiedId === p.id ? 'Copied!' : `Error: ${p.config_json.last_error}`}
                   </span>
                 )}
               </p>

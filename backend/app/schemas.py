@@ -56,6 +56,9 @@ class PersonOut(PersonBase):
     is_subscribed: bool = False
     latest_trade: Optional[TradeOut] = None
     trade_count: int = 0
+    trade_count_30d: int = 0
+    buy_count: int = 0
+    sell_count: int = 0
 
     class Config:
         from_attributes = True

@@ -158,10 +158,10 @@ export default function PortfoliosTab() {
             <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Disclosure lag</span>
             <div className="mt-1">
               <div className="text-xs font-bold" style={{ color: 'var(--text-bright)' }}>
-                {insights.disclosure_lag?.median_days}d <span className="text-[10px] text-slate-500 font-normal">median</span>
+                {insights.disclosure_lag?.median_days === 'N/A' ? 'N/A' : `${insights.disclosure_lag?.median_days}d`} <span className="text-[10px] text-slate-500 font-normal">median</span>
               </div>
               <div className="text-[10px] text-amber-500 font-semibold mt-0.5">
-                {insights.disclosure_lag?.late_pct}% late
+                {insights.disclosure_lag?.late_pct === 'N/A' ? 'No late trades' : `${insights.disclosure_lag?.late_pct} late`}
               </div>
             </div>
           </div>
