@@ -68,8 +68,16 @@ export default function PersonCard({ person, performance, onToggleFollow }) {
                 <div className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1">
                   {trade.ticker}
                 </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">
+                <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                   {new Date(trade.trade_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  {trade.source_url && (
+                    <a href={trade.source_url} target="_blank" rel="noopener noreferrer" 
+                      className="text-[10px] text-cyan-500 hover:text-cyan-400 hover:underline flex items-center gap-0.5"
+                      title="View Official Government Disclosure"
+                    >
+                      • Link ↗
+                    </a>
+                  )}
                 </div>
               </div>
             </div>

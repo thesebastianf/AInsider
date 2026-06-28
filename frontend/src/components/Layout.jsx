@@ -6,8 +6,9 @@ export default function Layout({ children, activeTab, bottomNav }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('ainsider-theme') || 'dark');
 
   useEffect(() => {
-    const isLight = theme === 'light';
-    document.documentElement.classList.toggle('light-theme', isLight);
+    const isDark = theme === 'dark';
+    document.documentElement.classList.toggle('dark', isDark);
+    document.documentElement.classList.toggle('light-theme', !isDark);
     localStorage.setItem('ainsider-theme', theme);
   }, [theme]);
 
@@ -16,7 +17,7 @@ export default function Layout({ children, activeTab, bottomNav }) {
   };
 
   return (
-    <div className="w-full max-w-md md:max-w-5xl h-full relative flex flex-col overflow-hidden md:border-x border-slate-800/50 mx-auto"
+    <div className="w-full max-w-[1440px] h-full relative flex flex-col overflow-hidden border-x border-slate-800/20 dark:border-slate-800/50 mx-auto"
       style={{ background: 'var(--bg-main)', color: 'var(--text-main)' }}
     >
       {/* ─── Ambient Glow am oberen Rand ────────────────── */}

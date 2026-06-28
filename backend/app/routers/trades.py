@@ -40,7 +40,23 @@ def get_trades(
     trades = query.order_by(Trade.trade_date.desc()).offset(offset).limit(limit).all()
 
     return TradeList(
-        trades=[TradeOut.model_validate(t) for t in trades],
+        trades=[
+            TradeOut(
+                id=t.id,
+                target_person_id=t.target_person_id,
+                person_name=t.person.name,
+                person_category=t.person.category,
+                ticker=t.ticker,
+                type=t.type,
+                amount_range=t.amount_range,
+                trade_date=t.trade_date,
+                filing_date=t.filing_date,
+                source_url=t.source_url,
+                ai_score=t.ai_score,
+                ai_summary=t.ai_summary,
+                created_at=t.created_at
+            ) for t in trades
+        ],
         total=total,
     )
 
@@ -52,4 +68,18 @@ def get_trade(trade_id: int, db: Session = Depends(get_db)):
     if not trade:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Trade not found")
-    return TradeOut.model_validate(trade)
+    return TradeOut(
+        id=trade.id,
+        target_person_id=trade.target_person_id,
+        person_name=trade.person.name,
+        person_category=trade.person.category,
+        ticker=trade.ticker,
+        type=trade.type,
+        amount_range=trade.amount_range,
+        trade_date=trade.trade_date,
+        filing_date=trade.filing_date,
+        source_url=trade.source_url,
+        ai_score=trade.ai_score,
+        ai_summary=trade.ai_summary,
+        created_at=trade.created_at
+    )

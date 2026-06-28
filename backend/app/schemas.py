@@ -15,6 +15,8 @@ from datetime import date, datetime
 class TradeOut(BaseModel):
     id: int
     target_person_id: int
+    person_name: Optional[str] = None
+    person_category: Optional[str] = None
     ticker: str
     type: str
     amount_range: str

@@ -355,6 +355,13 @@ function DataSourceSection() {
     sec13f: 'SEC EDGAR (13F RSS Feed / API)',
   };
 
+  const DS_DESCS = {
+    house: 'Official Financial Disclosure Reports filed by US Representatives, parsed in real-time by the House Stock Watcher project.',
+    senate: 'Public Financial Disclosure reports filed by US Senators, aggregated by the Senate Stock Watcher project.',
+    quiver: 'Alternative data service tracking politician trades, lobbying activities, and government contracts. Requires an API Key.',
+    sec13f: 'Official quarterly holdings reports (Form 13F) filed by major institutional fund managers to the US SEC EDGAR system.',
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -380,6 +387,16 @@ function DataSourceSection() {
               </button>
             ))}
           </div>
+
+          {/* Selected Provider Info */}
+          <div className="p-2.5 bg-slate-900/50 dark:bg-slate-950/50 rounded-lg border border-slate-800/30 dark:border-slate-800/60 text-[10px] text-slate-400 leading-relaxed space-y-1">
+            <span className="font-semibold text-slate-300 dark:text-slate-200 block uppercase tracking-wider text-[9px]">
+              Source Information
+            </span>
+            <p>{DS_DESCS[provType]}</p>
+            <p className="font-mono text-[9px] text-slate-500 dark:text-slate-500 truncate">{DS_URLS[provType]}</p>
+          </div>
+
           <input placeholder="Display name" value={name} onChange={e => setName(e.target.value)}
             className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
           {Object.entries(currentFields).map(([key, label]) => (

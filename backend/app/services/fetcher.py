@@ -208,7 +208,7 @@ def fetch_trades() -> List[RawTrade]:
                 
             logger.info(f"Fetching from data source: {source.name} ({source.provider_type})")
             provider = provider_cls(source)
-            trades = provider.fetch_trades()
+            trades = provider.fetch_trades(limit=2000)
             all_trades.extend(trades)
             
             # Update last fetch time
