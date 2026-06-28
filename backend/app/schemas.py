@@ -23,6 +23,8 @@ class TradeOut(BaseModel):
     trade_date: date
     filing_date: Optional[date] = None
     source_url: Optional[str] = None
+    price_at_transaction: Optional[float] = None
+    return_since_purchase_pct: Optional[float] = None
     ai_score: Optional[int] = None
     ai_summary: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -59,6 +61,7 @@ class PersonOut(PersonBase):
     trade_count_30d: int = 0
     buy_count: int = 0
     sell_count: int = 0
+    avg_trade_return_pct: Optional[float] = None
 
     class Config:
         from_attributes = True

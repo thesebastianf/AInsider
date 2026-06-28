@@ -41,6 +41,7 @@ def upgrade() -> None:
         sa.Column("trade_date", sa.Date(), nullable=False),
         sa.Column("filing_date", sa.Date()),
         sa.Column("source_url", sa.String(500)),
+        sa.Column("price_at_transaction", sa.Float(), nullable=True),
         sa.Column("ai_score", sa.Integer()),
         sa.Column("ai_summary", sa.Text()),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),

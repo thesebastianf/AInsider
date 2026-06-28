@@ -39,8 +39,14 @@ def get_trades(
     total = query.count()
     trades = query.order_by(Trade.trade_date.desc()).offset(offset).limit(limit).all()
 
-    return TradeList(
-        trades=[
+    res_trades = []
+    for t in trades:
+        ret_pct = None
+        if t.price_at_transaction and t.price_at_transaction > 0:
+            perf = db.query(AssetPerformance).filter(AssetPerformance.ticker == t.ticker).first()
+            if perf and perf.current_price:
+                ret_pct = round(((perf.current_price - t.price_at_transaction) / t.price_at_transaction) * 100, 2)
+        res_trades.append(
             TradeOut(
                 id=t.id,
                 target_person_id=t.target_person_id,
@@ -52,11 +58,16 @@ def get_trades(
                 trade_date=t.trade_date,
                 filing_date=t.filing_date,
                 source_url=t.source_url,
+                price_at_transaction=t.price_at_transaction,
+                return_since_purchase_pct=ret_pct,
                 ai_score=t.ai_score,
                 ai_summary=t.ai_summary,
                 created_at=t.created_at
-            ) for t in trades
-        ],
+            )
+        )
+
+    return TradeList(
+        trades=res_trades,
         total=total,
     )
 
@@ -68,6 +79,13 @@ def get_trade(trade_id: int, db: Session = Depends(get_db)):
     if not trade:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Trade not found")
+        
+    ret_pct = None
+    if trade.price_at_transaction and trade.price_at_transaction > 0:
+        perf = db.query(AssetPerformance).filter(AssetPerformance.ticker == trade.ticker).first()
+        if perf and perf.current_price:
+            ret_pct = round(((perf.current_price - trade.price_at_transaction) / trade.price_at_transaction) * 100, 2)
+
     return TradeOut(
         id=trade.id,
         target_person_id=trade.target_person_id,
@@ -79,6 +97,8 @@ def get_trade(trade_id: int, db: Session = Depends(get_db)):
         trade_date=trade.trade_date,
         filing_date=trade.filing_date,
         source_url=trade.source_url,
+        price_at_transaction=trade.price_at_transaction,
+        return_since_purchase_pct=ret_pct,
         ai_score=trade.ai_score,
         ai_summary=trade.ai_summary,
         created_at=trade.created_at

@@ -33,11 +33,30 @@ function getTickerDetails(ticker) {
   };
 }
 
+const getInitials = (name) => {
+  const parts = (name || '').trim().split(' ');
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return (name || 'U').slice(0, 2).toUpperCase();
+};
+
+const getAvatarColor = (name) => {
+  let hash = 0;
+  const str = name || '';
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash % 360);
+  return `hsl(${hue}, 60%, 35%)`;
+};
+
 export default function PersonCard({ person, performance, onToggleFollow, onToggleSubscribe, onUntrack, onTrack }) {
   const [showHistory, setShowHistory] = useState(false);
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(false);
   const [copiedIsin, setCopiedIsin] = useState(null);
+  const [imgError, setImgError] = useState(false);
 
   const trade = person.latest_trade;
   const perf = trade ? performance?.[trade.ticker] : null;
@@ -75,12 +94,21 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
         
         <div className="flex justify-between items-start mb-3 relative z-10 gap-2">
           <div className="flex gap-4">
-            {/* Avatar Photo */}
             <div className="w-14 h-14 rounded-full overflow-hidden bg-surface-2 border-2 border-border shrink-0 flex items-center justify-center">
-              {person.photo_url ? (
-                <img src={person.photo_url} alt={person.name} className="w-full h-full object-cover" />
+              {person.photo_url && !imgError ? (
+                <img 
+                  src={person.photo_url} 
+                  alt={person.name} 
+                  onError={() => setImgError(true)}
+                  className="w-full h-full object-cover" 
+                />
               ) : (
-                <User className="h-6 w-6 text-slate-400 dark:text-slate-500" />
+                <div 
+                  className="w-full h-full flex items-center justify-center text-sm font-extrabold text-slate-100 select-none"
+                  style={{ backgroundColor: getAvatarColor(person.name) }}
+                >
+                  {getInitials(person.name)}
+                </div>
               )}
             </div>
             
@@ -130,7 +158,12 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
 
                 {/* Untrack Button */}
                 <button 
-                  onClick={(e) => { e.stopPropagation(); onUntrack(person.id); }} 
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    if (window.confirm(`Delete ${person.name} from Dashboard?`)) {
+                      onUntrack(person.id); 
+                    }
+                  }} 
                   className="p-1.5 bg-surface-2 rounded-full hover:bg-red-500/10 hover:border-red-500/30 text-slate-400 hover:text-red-500 transition-colors border border-border"
                   title="Remove from portfolios"
                 >
@@ -172,12 +205,12 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
         </div>
 
         <div className="flex justify-between items-center text-[11px] py-1 border-b border-border/40 relative z-10">
-          <span className="text-slate-500 dark:text-slate-400">YTD Performance</span>
-          {perf && perf.ytd_performance_pct !== null ? (
+          <span className="text-slate-500 dark:text-slate-400">Avg. Trade Return</span>
+          {person.avg_trade_return_pct !== null && person.avg_trade_return_pct !== undefined ? (
             <span className={`font-bold flex items-center gap-1 ${
-              perf.ytd_performance_pct >= 0 ? 'text-green-500 dark:text-green-400' : 'text-red-500 dark:text-red-400'
+              person.avg_trade_return_pct >= 0 ? 'text-green-500 dark:text-green-400' : 'text-red-500 dark:text-red-400'
             }`}>
-              {perf.ytd_performance_pct >= 0 ? '+' : ''}{perf.ytd_performance_pct}%
+              {person.avg_trade_return_pct >= 0 ? '+' : ''}{person.avg_trade_return_pct}%
             </span>
           ) : (
             <span className="text-slate-600 dark:text-slate-500">Pending</span>
@@ -212,12 +245,20 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/50">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-800 shrink-0">
-                  {person.photo_url ? (
-                    <img src={person.photo_url} alt={person.name} className="w-full h-full object-cover" />
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-800 shrink-0 flex items-center justify-center">
+                  {person.photo_url && !imgError ? (
+                    <img 
+                      src={person.photo_url} 
+                      alt={person.name} 
+                      onError={() => setImgError(true)}
+                      className="w-full h-full object-cover" 
+                    />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xs font-bold text-slate-400 uppercase">
-                      {person.name[0]}
+                    <div 
+                      className="w-full h-full flex items-center justify-center text-xs font-bold text-slate-100 select-none"
+                      style={{ backgroundColor: getAvatarColor(person.name) }}
+                    >
+                      {getInitials(person.name)}
                     </div>
                   )}
                 </div>
@@ -286,16 +327,27 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
                       
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-400 font-medium">{t.amount_range}</span>
-                        {t.ai_score && (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] text-slate-500">AI Score:</span>
+                        <div className="flex items-center gap-2">
+                          {t.price_at_transaction && (
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {t.type === 'BUY' ? 'Bought' : 'Sold'} at ${t.price_at_transaction.toFixed(2)}
+                            </span>
+                          )}
+                          {t.return_since_purchase_pct !== null && t.return_since_purchase_pct !== undefined && (
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              t.return_since_purchase_pct >= 0 ? 'bg-green-500/10 text-green-400 border border-green-500/10' : 'bg-red-500/10 text-red-400 border border-red-500/10'
+                            } border`}>
+                              {t.return_since_purchase_pct >= 0 ? '+' : ''}{t.return_since_purchase_pct}%
+                            </span>
+                          )}
+                          {t.ai_score && (
                             <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
                               t.ai_score >= 7 ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/10' : 'bg-slate-800 text-slate-400'
                             }`}>
-                              {t.ai_score}/10
+                              AI: {t.ai_score}/10
                             </span>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                       
                       {t.ai_summary && (

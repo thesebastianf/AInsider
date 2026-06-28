@@ -41,8 +41,44 @@ def _get_or_create_person(db: Session, raw: RawTrade) -> TargetPerson:
     return person
 
 
+def _get_historical_price(ticker: str, trade_date) -> float | None:
+    """Fetch the close price of a ticker on a specific trade date."""
+    import yfinance as yf
+    from datetime import timedelta
+    try:
+        # Rate limit to avoid yfinance blocking
+        from app.services.price_updater import _rate_limit
+        _rate_limit()
+    except Exception:
+        pass
+        
+    try:
+        stock = yf.Ticker(ticker)
+        # Fetch a small window around the trade date to ensure we get a trading day's price
+        start_str = trade_date.isoformat()
+        end_date = trade_date + timedelta(days=5)
+        hist = stock.history(start=start_str, end=end_date.isoformat())
+        if not hist.empty:
+            return float(hist["Close"].iloc[0])
+    except Exception as e:
+        logger.warning(f"Failed to fetch historical price for {ticker} on {trade_date}: {e}")
+    return None
+
+
 def _insert_trade(db: Session, person: TargetPerson, raw: RawTrade) -> Trade | None:
     """Try to insert a trade, returns None if duplicate."""
+    # Deduplication check before historical price fetch to minimize API rate limiting
+    existing = db.query(Trade).filter(
+        Trade.target_person_id == person.id,
+        Trade.ticker == raw.ticker,
+        Trade.trade_date == raw.trade_date,
+        Trade.amount_range == raw.amount_range,
+    ).first()
+    if existing:
+        return None
+
+    price_at_transaction = _get_historical_price(raw.ticker, raw.trade_date)
+
     trade = Trade(
         target_person_id=person.id,
         ticker=raw.ticker,
@@ -51,6 +87,7 @@ def _insert_trade(db: Session, person: TargetPerson, raw: RawTrade) -> Trade | N
         trade_date=raw.trade_date,
         filing_date=raw.filing_date,
         source_url=raw.source_url,
+        price_at_transaction=price_at_transaction,
     )
     db.add(trade)
     try:

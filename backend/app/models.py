@@ -49,6 +49,7 @@ class Trade(Base):
     trade_date = Column(Date, nullable=False)
     filing_date = Column(Date)
     source_url = Column(String(500))
+    price_at_transaction = Column(Float, nullable=True)
     ai_score = Column(Integer)  # 1-10, NULL if not yet evaluated
     ai_summary = Column(Text)
     created_at = Column(DateTime, server_default=func.now())

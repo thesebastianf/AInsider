@@ -301,17 +301,23 @@ export default function PortfoliosTab() {
             <p className="text-slate-600 text-xs mt-1">Try adjusting your search or filters</p>
           </div>
         ) : (
-          personsData?.persons?.map((person, i) => (
-            <div key={person.id} style={{ animationDelay: `${i * 0.05}s` }}>
-              <PersonCard
-                person={person}
-                performance={perfMap}
-                onToggleFollow={handleFollow}
-                onToggleSubscribe={handleSubscribe}
-                onUntrack={handleUntrack}
-              />
-            </div>
-          ))
+          [...(personsData?.persons || [])]
+            .sort((a, b) => {
+              if (a.is_followed && !b.is_followed) return -1;
+              if (!a.is_followed && b.is_followed) return 1;
+              return a.name.localeCompare(b.name);
+            })
+            .map((person, i) => (
+              <div key={person.id} style={{ animationDelay: `${i * 0.05}s` }}>
+                <PersonCard
+                  person={person}
+                  performance={perfMap}
+                  onToggleFollow={handleFollow}
+                  onToggleSubscribe={handleSubscribe}
+                  onUntrack={handleUntrack}
+                />
+              </div>
+            ))
         )}
       </div>
     </div>
