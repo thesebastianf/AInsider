@@ -54,6 +54,22 @@ def get_system_stats(db: Session = Depends(get_db)):
 
     from app.routers.settings import _runtime_overrides
     last_run = _runtime_overrides.get("last_pipeline_run")
+    last_price = _runtime_overrides.get("last_price_update")
+
+    # Fetch next run times from APScheduler instance
+    next_pipeline = None
+    next_price_update = None
+    try:
+        from app.tasks.scheduler import scheduler
+        if scheduler.running:
+            pipe_job = scheduler.get_job("pipeline_job")
+            if pipe_job:
+                next_pipeline = pipe_job.next_run_time
+            price_job = scheduler.get_job("price_update_job")
+            if price_job:
+                next_price_update = price_job.next_run_time
+    except Exception:
+        pass
 
     return SystemStats(
         total_trades=total_trades,
@@ -62,6 +78,9 @@ def get_system_stats(db: Session = Depends(get_db)):
         total_tickers=total_tickers,
         uptime_seconds=uptime_seconds,
         last_pipeline_run=last_run,
+        next_pipeline_run=next_pipeline,
+        last_price_update=last_price,
+        next_price_update=next_price_update,
         api_status="online",
         db_status="connected",
         llm_status=llm_status,

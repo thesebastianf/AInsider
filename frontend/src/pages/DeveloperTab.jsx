@@ -66,24 +66,50 @@ export default function DeveloperTab() {
 
         {/* Status Rows */}
         <div className="space-y-3">
+          {/* Database */}
           <div className="glass-card p-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Database size={14} className="text-slate-400" />
-              <span className="text-xs text-slate-400">Database</span>
+              <span className="text-xs text-slate-400">Database Connection</span>
             </div>
             <span className="text-xs font-semibold text-emerald-400">
               {stats?.db_status || 'checking...'}
             </span>
           </div>
 
-          {stats?.last_pipeline_run && (
-            <div className="glass-card p-3 flex items-center justify-between">
-              <span className="text-xs text-slate-400">Last Pipeline Run</span>
-              <span className="text-xs text-slate-300">
-                {new Date(stats.last_pipeline_run).toLocaleString()}
+          {/* Pipeline Status */}
+          <div className="glass-card p-3 space-y-2">
+            <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">Data Ingestion Pipeline</span>
+            <div className="flex justify-between items-center text-[11px]">
+              <span className="text-slate-500">Last Ingestion Run</span>
+              <span className="text-slate-300 font-mono">
+                {stats?.last_pipeline_run ? new Date(stats.last_pipeline_run).toLocaleString() : 'Never'}
               </span>
             </div>
-          )}
+            <div className="flex justify-between items-center text-[11px]">
+              <span className="text-slate-500">Next Scheduled Run</span>
+              <span className="text-slate-300 font-mono">
+                {stats?.next_pipeline_run ? new Date(stats.next_pipeline_run).toLocaleString() : 'Not scheduled'}
+              </span>
+            </div>
+          </div>
+
+          {/* yfinance Price Updater Status */}
+          <div className="glass-card p-3 space-y-2">
+            <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">yfinance Stock Price Updater</span>
+            <div className="flex justify-between items-center text-[11px]">
+              <span className="text-slate-500">Last Price Update</span>
+              <span className="text-slate-300 font-mono">
+                {stats?.last_price_update ? new Date(stats.last_price_update).toLocaleString() : 'Never'}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-[11px]">
+              <span className="text-slate-500">Next Scheduled Update</span>
+              <span className="text-slate-300 font-mono">
+                {stats?.next_price_update ? new Date(stats.next_price_update).toLocaleString() : 'Not scheduled'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 

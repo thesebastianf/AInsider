@@ -215,6 +215,9 @@ class SystemStats(BaseModel):
     total_tickers: int = 0
     uptime_seconds: float = 0
     last_pipeline_run: Optional[datetime] = None
+    next_pipeline_run: Optional[datetime] = None
+    last_price_update: Optional[datetime] = None
+    next_price_update: Optional[datetime] = None
     api_status: str = "online"
     db_status: str = "connected"
     llm_status: str = "unknown"
