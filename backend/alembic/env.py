@@ -3,6 +3,11 @@ Alembic environment configuration.
 Loads the database URL from app config and uses SQLAlchemy models metadata.
 """
 
+import sys
+import os
+# Inject backend directory into python path to allow importing app module
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
