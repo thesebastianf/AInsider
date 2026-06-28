@@ -105,6 +105,12 @@ SEED_PERSONS = [
         "photo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/User_icon_2.svg/320px-User_icon_2.svg.png",
         "description": "CEO @ Deutsche Bank AG. Regularly acquires Deutsche Bank stock as part of investment and compensation disclosures."
     },
+    {
+        "name": "Situational Awareness LP", "category": "Fund Manager",
+        "committees": ["Situational Awareness LP"],
+        "photo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/User_icon_2.svg/320px-User_icon_2.svg.png",
+        "description": "AI-focused hedge fund founded by Leopold Aschenbrenner (ex-OpenAI). Files 13F quarterly holdings reports with SEC (CIK: 0002045724). Concentrated AI/tech positions."
+    },
 ]
 
 
@@ -183,9 +189,20 @@ def seed_database(db: Session) -> bool:
         existing = db.query(DataSourceConfig).filter(DataSourceConfig.provider_type == p_type).first()
         if not existing:
             logger.info(f"Seeding default Data Source: {name}")
+            # Pre-populate sec13f with known fund CIKs
+            default_cfg = {}
+            if p_type == "sec13f":
+                default_cfg = {
+                    "cik_list": "2045724,1067983",  # Situational Awareness LP, Berkshire Hathaway
+                    "_notes": (
+                        "CIKs: 2045724=Situational Awareness LP (Aschenbrenner), "
+                        "1067983=Berkshire Hathaway (Buffett). "
+                        "Add more CIKs comma-separated. Find CIKs at data.sec.gov/submissions/CIK######.json"
+                    )
+                }
             ds_config = DataSourceConfig(
                 provider_type=p_type, name=name,
-                config_json={}, is_enabled=True
+                config_json=default_cfg, is_enabled=(p_type == "sec13f")
             )
             db.add(ds_config)
             seeded = True

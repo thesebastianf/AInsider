@@ -64,11 +64,16 @@ export default function PortfoliosTab() {
   };
 
   const handleUntrack = async (personId) => {
+    // Optimistic removal: instantly filter out the card from UI
+    if (personsData?.persons) {
+      personsData.persons = personsData.persons.filter(p => p.id !== personId);
+    }
     try {
       await trackPerson(personId, false);
-      refetch();
+      refetch(); // sync with backend to confirm
     } catch (err) {
       console.error('Untrack failed:', err);
+      refetch(); // revert on error
     }
   };
 

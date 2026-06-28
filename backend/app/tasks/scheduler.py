@@ -7,6 +7,7 @@ import logging
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 
 from app.config import settings
 
@@ -50,6 +51,24 @@ def _run_price_update_job():
         add_log("ERROR", f"Scheduled price update failed: {str(e)[:100]}")
 
 
+def _run_backup_job():
+    """Wrapper for the weekly database backup job."""
+    from app.services.backup import run_backup
+    from app.routers.system import add_log
+
+    try:
+        add_log("INFO", "Scheduled weekly database backup starting...")
+        result = run_backup()
+        if result.get("status") == "success":
+            size_mb = result.get("size_bytes", 0) / (1024 * 1024)
+            add_log("INFO", f"Weekly backup complete: {result['filename']} ({size_mb:.2f} MB)")
+        else:
+            add_log("ERROR", f"Weekly backup failed: {result.get('message', 'unknown error')}")
+    except Exception as e:
+        logger.error(f"Scheduled backup failed: {e}")
+        add_log("ERROR", f"Scheduled backup failed: {str(e)[:100]}")
+
+
 def start_scheduler():
     """Start the background scheduler with configured jobs."""
     # Pipeline job
@@ -71,6 +90,16 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info(f"Price update job scheduled every {settings.PRICE_UPDATE_INTERVAL_MINUTES} minutes")
+
+    # Weekly backup job — every Sunday at 03:00
+    scheduler.add_job(
+        _run_backup_job,
+        trigger=CronTrigger(day_of_week="sun", hour=3, minute=0),
+        id="backup_job",
+        name="Weekly Database Backup",
+        replace_existing=True,
+    )
+    logger.info("Weekly backup job scheduled for Sunday 03:00")
 
     scheduler.start()
     logger.info("Background scheduler started")

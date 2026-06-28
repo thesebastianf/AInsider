@@ -57,6 +57,7 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
   const [loading, setLoading] = useState(false);
   const [copiedIsin, setCopiedIsin] = useState(null);
   const [imgError, setImgError] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const trade = person.latest_trade;
   const perf = trade ? performance?.[trade.ticker] : null;
@@ -160,12 +161,10 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
                 <button 
                   onClick={(e) => { 
                     e.stopPropagation(); 
-                    if (window.confirm(`Delete ${person.name} from Dashboard?`)) {
-                      onUntrack(person.id); 
-                    }
+                    setShowDeleteConfirm(true);
                   }} 
                   className="p-1.5 bg-surface-2 rounded-full hover:bg-red-500/10 hover:border-red-500/30 text-slate-400 hover:text-red-500 transition-colors border border-border"
-                  title="Remove from portfolios"
+                  title="Remove from Dashboard"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -359,6 +358,70 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
                   );
                 })
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Confirmation Modal ─────────────────────────── */}
+      {showDeleteConfirm && (
+        <div
+          onClick={() => setShowDeleteConfirm(false)}
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-slate-900 border border-red-500/20 rounded-2xl w-full max-w-sm shadow-2xl shadow-red-950/30 overflow-hidden animate-fade-in"
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-slate-800">
+              <div className="flex items-center gap-3 mb-1">
+                <div
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold text-white shrink-0"
+                  style={{ backgroundColor: getAvatarColor(person.name) }}
+                >
+                  {getInitials(person.name)}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-100 leading-snug">{person.name}</p>
+                  <p className="text-[10px] text-slate-500 font-mono uppercase tracking-wider">{person.category}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-5">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                  <Trash2 className="h-4 w-4 text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-100 mb-1">Remove from Dashboard?</h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    This person will be moved back to <span className="text-cyan-400 font-medium">Discover</span>.
+                    Their trade history is preserved and you can re-add them anytime.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 px-5 pb-5">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 py-2 px-4 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  onUntrack(person.id);
+                }}
+                className="flex-1 py-2 px-4 rounded-lg text-xs font-semibold bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/20 transition-colors"
+              >
+                Remove
+              </button>
             </div>
           </div>
         </div>

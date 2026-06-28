@@ -41,33 +41,59 @@ def _get_or_create_person(db: Session, raw: RawTrade) -> TargetPerson:
     return person
 
 
-def _get_historical_price(ticker: str, trade_date) -> float | None:
-    """Fetch the close price of a ticker on a specific trade date."""
+# In-memory price cache for the current pipeline run: (ticker, date_str) -> price
+_price_cache: dict = {}
+
+
+def _get_historical_price(ticker: str, trade_date, *, _delay: float = 2.0, _retries: int = 3) -> float | None:
+    """Fetch the close price of a ticker on a specific trade date.
+    
+    Results are cached per (ticker, date) within the pipeline run to avoid
+    duplicate yfinance calls. Uses exponential backoff on rate-limit errors.
+    """
     import yfinance as yf
     from datetime import timedelta
-    try:
-        # Rate limit to avoid yfinance blocking
-        from app.services.price_updater import _rate_limit
-        _rate_limit()
-    except Exception:
-        pass
-        
-    try:
-        stock = yf.Ticker(ticker)
-        # Fetch a small window around the trade date to ensure we get a trading day's price
-        start_str = trade_date.isoformat()
-        end_date = trade_date + timedelta(days=5)
-        hist = stock.history(start=start_str, end=end_date.isoformat())
-        if not hist.empty:
-            return float(hist["Close"].iloc[0])
-    except Exception as e:
-        logger.warning(f"Failed to fetch historical price for {ticker} on {trade_date}: {e}")
+    import time
+
+    cache_key = (ticker, trade_date.isoformat())
+    if cache_key in _price_cache:
+        return _price_cache[cache_key]
+
+    for attempt in range(_retries):
+        try:
+            time.sleep(_delay)  # Fixed delay between calls to stay within free tier
+            stock = yf.Ticker(ticker)
+            start_str = trade_date.isoformat()
+            end_date = trade_date + timedelta(days=5)
+            hist = stock.history(start=start_str, end=end_date.isoformat())
+            if not hist.empty:
+                price = float(hist["Close"].iloc[0])
+                _price_cache[cache_key] = price
+                return price
+            # No data for this date window (e.g. delisted ticker)
+            _price_cache[cache_key] = None
+            return None
+        except Exception as e:
+            err_str = str(e)
+            if "Too Many Requests" in err_str or "Rate limited" in err_str:
+                wait = _delay * (3 ** attempt)  # Exponential backoff: 2s, 6s, 18s
+                logger.warning(
+                    f"Rate limited fetching {ticker} on {trade_date} "
+                    f"(attempt {attempt + 1}/{_retries}), waiting {wait:.0f}s..."
+                )
+                time.sleep(wait)
+            else:
+                logger.warning(f"Failed to fetch historical price for {ticker} on {trade_date}: {e}")
+                _price_cache[cache_key] = None
+                return None
+
+    logger.warning(f"Gave up fetching price for {ticker} on {trade_date} after {_retries} retries")
+    _price_cache[cache_key] = None
     return None
 
 
-def _insert_trade(db: Session, person: TargetPerson, raw: RawTrade) -> Trade | None:
+def _insert_trade(db: Session, person: TargetPerson, raw: RawTrade, price_at_transaction: float | None = None) -> Trade | None:
     """Try to insert a trade, returns None if duplicate."""
-    # Deduplication check before historical price fetch to minimize API rate limiting
     existing = db.query(Trade).filter(
         Trade.target_person_id == person.id,
         Trade.ticker == raw.ticker,
@@ -76,8 +102,6 @@ def _insert_trade(db: Session, person: TargetPerson, raw: RawTrade) -> Trade | N
     ).first()
     if existing:
         return None
-
-    price_at_transaction = _get_historical_price(raw.ticker, raw.trade_date)
 
     trade = Trade(
         target_person_id=person.id,
@@ -152,6 +176,31 @@ def run_pipeline() -> dict:
         stats["fetched"] = len(raw_trades)
         add_log("INFO", f"Fetched {len(raw_trades)} raw trades")
 
+        # Step 1b: Pre-fetch historical prices for all unique (ticker, date) pairs
+        # that are not already in the DB or cache – this prevents N individual HTTP
+        # calls inside the main loop and dramatically reduces rate-limit exposure.
+        global _price_cache
+        _price_cache = {}  # Reset cache each pipeline run
+
+        unique_pairs = set()
+        for raw in raw_trades:
+            unique_pairs.add((raw.ticker, raw.trade_date))
+        
+        add_log("INFO", f"Pre-fetching historical prices for {len(unique_pairs)} unique (ticker, date) pairs...")
+        for ticker, trade_date in unique_pairs:
+            # Skip if already in DB (existing trade with price already captured)
+            existing_price = db.query(Trade.price_at_transaction).filter(
+                Trade.ticker == ticker,
+                Trade.trade_date == trade_date,
+                Trade.price_at_transaction.isnot(None),
+            ).first()
+            if existing_price:
+                _price_cache[(ticker, trade_date.isoformat())] = existing_price[0]
+            else:
+                _get_historical_price(ticker, trade_date)  # Result goes into _price_cache
+        
+        add_log("INFO", "Historical price pre-fetch complete")
+
         updated_tickers = set()
 
         for raw in raw_trades:
@@ -160,8 +209,9 @@ def run_pipeline() -> dict:
                 person = _get_or_create_person(db, raw)
                 db.commit()
 
-                # Step 3: Insert trade (deduplication)
-                trade = _insert_trade(db, person, raw)
+                # Step 3: Insert trade (deduplication) — pass cached price
+                cached_price = _price_cache.get((raw.ticker, raw.trade_date.isoformat()))
+                trade = _insert_trade(db, person, raw, price_at_transaction=cached_price)
                 if trade is None:
                     stats["duplicates"] += 1
                     continue

@@ -108,6 +108,26 @@ def trigger_pipeline():
         return {"status": "error", "message": str(e)}
 
 
+@router.get("/system/backups")
+def get_backups():
+    """List all existing database backups."""
+    from app.services.backup import list_backups
+    return {"backups": list_backups()}
+
+
+@router.post("/system/trigger-backup")
+def trigger_backup():
+    """Manually trigger an immediate database backup."""
+    from app.services.backup import run_backup
+    try:
+        add_log("INFO", "Manual backup trigger requested")
+        result = run_backup()
+        return result
+    except Exception as e:
+        add_log("ERROR", f"Manual backup error: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+
 @router.get("/system/insights")
 def get_insights(db: Session = Depends(get_db)):
     """Calculate and return congressional trading platform insights."""

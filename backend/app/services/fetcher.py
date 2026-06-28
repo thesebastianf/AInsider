@@ -45,91 +45,119 @@ class BaseDataSourceProvider(ABC):
 
 
 class HouseStockWatcherProvider(BaseDataSourceProvider):
-    """Fetches real trades from House Stock Watcher API (mirrored via Kadoa)."""
+    """Fetches ALL historical House trades from the HouseStockWatcher S3 bulk dataset.
     
-    URL = "https://congress.kadoa.com/data/trades.json"
+    This endpoint returns the complete archive of House trade disclosures since ~2012,
+    not just recent filings. No API key required.
+    """
+    
+    BULK_URL = "https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json"
+    FALLBACK_URL = "https://congress.kadoa.com/data/trades.json"
 
-    def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
+    def fetch_trades(self, limit: int = 5000) -> List[RawTrade]:
         trades = []
         try:
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "User-Agent": "AInsiderTrackerAdmin admin@ainsidertracker.com"
             }
-            resp = httpx.get(self.URL, headers=headers, timeout=30.0)
+            # Try the S3 bulk endpoint first (full history since 2012)
+            resp = httpx.get(self.BULK_URL, headers=headers, timeout=60.0)
             resp.raise_for_status()
             data = resp.json()
+            logger.info(f"HouseStockWatcher: Loaded {len(data)} total records from bulk dataset")
 
-            # Filter for House trades only (chamber == "house")
-            house_data = [item for item in data if item.get("chamber") == "house"]
-            recent = sorted(house_data, key=lambda x: x.get("transaction_date", ""), reverse=True)[:limit]
-
-            for item in recent:
+        except Exception as bulk_err:
+            logger.warning(f"HouseStockWatcher: Bulk S3 fetch failed ({bulk_err}), falling back to Kadoa live feed")
+            try:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                }
+                resp = httpx.get(self.FALLBACK_URL, headers=headers, timeout=30.0)
+                resp.raise_for_status()
+                data = resp.json()
+                # Fallback: filter for house chamber
+                data = [item for item in data if item.get("chamber") == "house"]
+            except Exception as fallback_err:
+                logger.error(f"HouseStockWatcher: All endpoints failed: {fallback_err}")
                 try:
-                    ticker = item.get("ticker")
-                    if not ticker or ticker == "--" or len(ticker) > 10:
-                        continue
-                    ticker = ticker.strip().upper()
+                    from app.routers.system import add_log
+                    add_log("ERROR", f"HouseStockWatcher fetch failed: {str(fallback_err)[:150]}")
+                except Exception:
+                    pass
+                return []
 
-                    t_date_str = item.get("transaction_date", "")
-                    if not t_date_str:
-                        continue
+        for item in data:
+            try:
+                ticker = item.get("ticker")
+                if not ticker or ticker == "--" or len(ticker) > 10:
+                    continue
+                ticker = ticker.strip().upper()
 
-                    # Parse date YYYY-MM-DD
-                    td = date.fromisoformat(t_date_str)
-
-                    trade_type_raw = item.get("transaction_type", "").upper()
-                    if "PURCHASE" in trade_type_raw or "BUY" in trade_type_raw:
-                        trade_type = "BUY"
-                    elif "SALE" in trade_type_raw or "SELL" in trade_type_raw:
-                        trade_type = "SELL"
-                    else:
-                        continue
-
-                    trade = RawTrade(
-                        person_name=item.get("filer_name", "Unknown"),
-                        person_category="Congress",
-                        committees=[],
-                        ticker=ticker,
-                        trade_type=trade_type,
-                        amount_range=item.get("amount_range_label", "$1,001-$15,000"),
-                        trade_date=td,
-                        filing_date=date.fromisoformat(item.get("filing_date")) if item.get("filing_date") else None,
-                        source_url=item.get("doc_url"),
-                    )
-                    trades.append(trade)
-                except Exception as e:
-                    logger.warning(f"HouseStockWatcher: Skipping malformed trade entry: {e}")
+                t_date_str = item.get("transaction_date", "")
+                if not t_date_str:
                     continue
 
-        except Exception as e:
-            logger.error(f"HouseStockWatcher: Failed to fetch data: {e}")
-            try:
-                from app.routers.system import add_log
-                add_log("ERROR", f"HouseStockWatcher fetch failed: {str(e)[:150]}")
-            except Exception:
-                pass
+                # Bulk dataset uses YYYY-MM-DD
+                try:
+                    td = date.fromisoformat(t_date_str)
+                except ValueError:
+                    continue
 
+                trade_type_raw = (item.get("type") or item.get("transaction_type", "")).upper()
+                if "PURCHASE" in trade_type_raw or "BUY" in trade_type_raw:
+                    trade_type = "BUY"
+                elif "SALE" in trade_type_raw or "SELL" in trade_type_raw:
+                    trade_type = "SELL"
+                else:
+                    continue
+
+                representative = (
+                    item.get("representative") or
+                    item.get("filer_name") or
+                    "Unknown"
+                )
+
+                trade = RawTrade(
+                    person_name=representative,
+                    person_category="Congress",
+                    committees=[],
+                    ticker=ticker,
+                    trade_type=trade_type,
+                    amount_range=item.get("amount") or item.get("amount_range_label") or "$1,001-$15,000",
+                    trade_date=td,
+                    filing_date=date.fromisoformat(item["disclosure_date"]) if item.get("disclosure_date") else None,
+                    source_url=item.get("pdf_url") or item.get("doc_url"),
+                )
+                trades.append(trade)
+            except Exception as e:
+                logger.debug(f"HouseStockWatcher: Skipping malformed trade entry: {e}")
+                continue
+
+        logger.info(f"HouseStockWatcher: Parsed {len(trades)} valid trades")
         return trades
 
 
 class SenateStockWatcherProvider(BaseDataSourceProvider):
-    """Fetches real trades from Senate Stock Watcher API (mirrored via GitHub)."""
+    """Fetches ALL historical Senate trades from the senate-stock-watcher-data GitHub archive.
+    
+    Loads the full aggregate dataset (all senators, all years) — not just the most recent filings.
+    No API key required.
+    """
     
     URL = "https://raw.githubusercontent.com/timothycarambat/senate-stock-watcher-data/master/aggregate/all_transactions.json"
 
-    def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
+    def fetch_trades(self, limit: int = 10000) -> List[RawTrade]:
         trades = []
         try:
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "User-Agent": "AInsiderTrackerAdmin admin@ainsidertracker.com"
             }
-            resp = httpx.get(self.URL, headers=headers, timeout=30.0)
+            resp = httpx.get(self.URL, headers=headers, timeout=60.0)
             resp.raise_for_status()
             data = resp.json()
+            logger.info(f"SenateStockWatcher: Loaded {len(data)} total records from bulk dataset")
 
-            recent = sorted(data, key=lambda x: x.get("transaction_date", ""), reverse=True)[:limit]
-
-            for item in recent:
+            for item in data:
                 try:
                     ticker = item.get("ticker", "").strip()
                     if not ticker or ticker == "--" or len(ticker) > 10:
@@ -143,7 +171,10 @@ class SenateStockWatcherProvider(BaseDataSourceProvider):
                     if len(parts) == 3:
                         td = date(int(parts[2]), int(parts[0]), int(parts[1]))
                     else:
-                        continue
+                        try:
+                            td = date.fromisoformat(trade_date_str)
+                        except ValueError:
+                            continue
 
                     trade_type_raw = item.get("type", "").upper()
                     if "PURCHASE" in trade_type_raw or "BUY" in trade_type_raw:
@@ -166,8 +197,10 @@ class SenateStockWatcherProvider(BaseDataSourceProvider):
                     )
                     trades.append(trade)
                 except Exception as e:
-                    logger.warning(f"SenateStockWatcher: Skipping malformed trade entry: {e}")
+                    logger.debug(f"SenateStockWatcher: Skipping malformed trade entry: {e}")
                     continue
+
+            logger.info(f"SenateStockWatcher: Parsed {len(trades)} valid trades")
 
         except Exception as e:
             logger.error(f"SenateStockWatcher: Failed to fetch data: {e}")
@@ -194,16 +227,208 @@ class QuiverQuantProvider(BaseDataSourceProvider):
 
 
 class SEC13FProvider(BaseDataSourceProvider):
-    """Fetches real trades from SEC EDGAR (13F Filings for Fund Managers)."""
+    """Fetches quarterly portfolio holdings from SEC EDGAR 13F filings.
     
-    def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
-        logger.warning("SEC13FProvider is not fully implemented yet.")
+    Parses institutional investment manager holdings for specified fund CIKs.
+    Data is completely free via the official SEC EDGAR REST API.
+    
+    config_json should contain:
+        cik_list: comma-separated CIKs to track, e.g. "0002045724,0001350694"
+    
+    Notable CIKs:
+        0002045724 - Situational Awareness LP (Leopold Aschenbrenner)
+        0001350694 - Berkshire Hathaway Inc
+        0001067983 - Berkshire Hathaway (Warren Buffett, main entity)
+        0001336528 - BlackRock Inc
+    
+    Note: 13F filings report portfolio *holdings* at end-of-quarter, not individual
+    buy/sell transactions. We represent each holding as a synthetic BUY trade on the
+    report date so they appear in the trade feed.
+    """
+    
+    EDGAR_BASE = "https://data.sec.gov"
+    HEADERS = {"User-Agent": "AInsiderTrackerAdmin admin@ainsidertracker.com"}
+
+    def _get_recent_13f_filing(self, cik_padded: str) -> Optional[dict]:
+        """Get the most recent 13F-HR filing metadata for a CIK."""
+        url = f"{self.EDGAR_BASE}/submissions/{cik_padded}.json"
         try:
-            from app.routers.system import add_log
-            add_log("WARNING", "SEC13FProvider: SEC EDGAR 13F parsing is not fully implemented yet.")
+            resp = httpx.get(url, headers=self.HEADERS, timeout=15.0)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            recent = data.get("filings", {}).get("recent", {})
+            forms = recent.get("form", [])
+            accessions = recent.get("accessionNumber", [])
+            filing_dates = recent.get("filingDate", [])
+            
+            # Find most recent 13F-HR
+            for i, form in enumerate(forms):
+                if form in ("13F-HR", "13F-HR/A"):
+                    return {
+                        "accession": accessions[i].replace("-", ""),
+                        "accession_dashed": accessions[i],
+                        "filing_date": filing_dates[i],
+                        "cik_padded": cik_padded,
+                        "entity_name": data.get("name", "Unknown Fund"),
+                    }
+        except Exception as e:
+            logger.warning(f"SEC13F: Could not fetch filing list for CIK {cik_padded}: {e}")
+        return None
+
+    def _parse_13f_holdings(self, filing: dict) -> List[RawTrade]:
+        """Parse the XML holdings table from a 13F-HR filing."""
+        import xml.etree.ElementTree as ET
+        
+        trades = []
+        cik_num = filing["cik_padded"].lstrip("CIK").lstrip("0")
+        accession = filing["accession"]
+        entity_name = filing["entity_name"]
+        
+        try:
+            filing_date = date.fromisoformat(filing["filing_date"])
         except Exception:
-            pass
-        return []
+            filing_date = date.today()
+        
+        # Step 1: Get the filing index to find the infotable XML
+        index_url = (
+            f"https://www.sec.gov/Archives/edgar/data/{cik_num}/{accession}/"
+            f"{filing['accession_dashed']}-index.htm"
+        )
+        try:
+            import time
+            time.sleep(0.5)  # Respect SEC rate limit (10 req/sec)
+            index_resp = httpx.get(index_url, headers=self.HEADERS, timeout=15.0)
+            
+            # Find the infotable XML link
+            import re
+            xml_match = re.search(
+                r'href="(/Archives/edgar/data/[^"]+(?:infotable|primary_doc)[^"]*\.xml)"',
+                index_resp.text,
+                re.IGNORECASE
+            )
+            if not xml_match:
+                # Try any XML that isn't the form XML wrapper
+                xml_match = re.search(
+                    r'href="(/Archives/edgar/data/[^"]+\.xml)"',
+                    index_resp.text
+                )
+            if not xml_match:
+                logger.warning(f"SEC13F: Could not find infotable XML for {entity_name}")
+                return []
+            
+            xml_url = "https://www.sec.gov" + xml_match.group(1)
+            time.sleep(0.5)
+            xml_resp = httpx.get(xml_url, headers=self.HEADERS, timeout=15.0)
+            xml_resp.raise_for_status()
+            
+            # Parse the infotable XML — namespace varies
+            xml_content = xml_resp.content
+            root = ET.fromstring(xml_content)
+            
+            # SEC 13F XML namespace (varies by year)
+            ns_candidates = [
+                "{http://www.sec.gov/edgar/document/thirteenf/informationTable}",
+                "",
+            ]
+            
+            info_table = None
+            for ns_prefix in ns_candidates:
+                entries = root.findall(f"{ns_prefix}infoTable")
+                if entries:
+                    info_table = entries
+                    break
+                # Also check nested
+                entries = root.findall(f".//{ns_prefix}infoTable")
+                if entries:
+                    info_table = entries
+                    break
+            
+            if not info_table:
+                logger.warning(f"SEC13F: No infoTable entries found for {entity_name}")
+                return []
+            
+            for entry in info_table[:200]:  # Max 200 positions per filing
+                try:
+                    def get_text(elem, tag):
+                        for ns in ns_candidates:
+                            node = elem.find(f"{ns}{tag}")
+                            if node is not None and node.text:
+                                return node.text.strip()
+                        return ""
+                    
+                    ticker = get_text(entry, "ticker") or get_text(entry, "issuerName", )
+                    if not ticker:
+                        # Use issuerName as ticker placeholder
+                        issuer = get_text(entry, "nameOfIssuer")
+                        if not issuer:
+                            continue
+                        # Extract ticker-like abbreviation
+                        ticker = issuer.split()[0].upper()[:6]
+                    
+                    ticker = ticker.upper().strip()
+                    if len(ticker) > 10 or not ticker:
+                        continue
+                    
+                    shares_raw = get_text(entry, "sshPrnamt") or get_text(entry, "shrsOrPrnAmt")
+                    value_raw = get_text(entry, "value")  # In thousands USD
+                    
+                    shares = int(float(shares_raw)) if shares_raw else 0
+                    value_k = int(float(value_raw)) if value_raw else 0
+                    value_usd = value_k * 1000
+                    
+                    if value_usd >= 1_000_000:
+                        amount_range = f"${value_usd / 1_000_000:.1f}M ({shares:,} sh)"
+                    elif value_usd >= 1_000:
+                        amount_range = f"${value_usd / 1_000:.0f}K ({shares:,} sh)"
+                    else:
+                        amount_range = f"{shares:,} shares"
+                    
+                    trade = RawTrade(
+                        person_name=entity_name,
+                        person_category="Fund Manager",
+                        committees=[],
+                        ticker=ticker,
+                        trade_type="BUY",  # 13F holdings are reported as positions held
+                        amount_range=amount_range[:50],
+                        trade_date=filing_date,
+                        filing_date=filing_date,
+                        source_url=xml_url,
+                    )
+                    trades.append(trade)
+                except Exception as e:
+                    logger.debug(f"SEC13F: Skipping holding entry: {e}")
+                    continue
+            
+            logger.info(f"SEC13F: Parsed {len(trades)} holdings for {entity_name} ({filing['filing_date']})")
+        
+        except Exception as e:
+            logger.error(f"SEC13F: Failed to parse holdings for {entity_name}: {e}")
+        
+        return trades
+
+    def fetch_trades(self, limit: int = 500) -> List[RawTrade]:
+        """Fetch 13F holdings for all configured CIKs."""
+        cfg = self.config.config_json or {}
+        cik_list_raw = cfg.get("cik_list", "")
+        
+        if not cik_list_raw:
+            logger.warning("SEC13F: No CIKs configured. Add CIK list in Settings -> Data Sources.")
+            return []
+        
+        cik_list = [c.strip().zfill(10) for c in cik_list_raw.split(",") if c.strip()]
+        all_trades = []
+        
+        for cik in cik_list:
+            cik_key = f"CIK{cik}"
+            filing = self._get_recent_13f_filing(cik_key)
+            if filing:
+                holdings = self._parse_13f_holdings(filing)
+                all_trades.extend(holdings)
+            else:
+                logger.warning(f"SEC13F: No 13F filing found for CIK {cik}")
+        
+        return all_trades
 
 
 class SECForm4Provider(BaseDataSourceProvider):
