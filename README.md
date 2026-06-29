@@ -66,6 +66,18 @@ The app will:
 - **AI Risk Scoring:** 1-10 score with color-coded badges to assess insider trade sentiment.
 - **Mobile-first Dark UI:** A stunning, unified grid layout that works perfectly on desktop and mobile.
 
+## 📸 Screenshots
+
+Here is a glimpse of the AInsider Tracker interface:
+
+| 1. Discover Dashboard | 2. Trade Details Modal | 3. Live Feed |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/1_dashboard.png" width="250" alt="Dashboard" /> | <img src="docs/screenshots/2_trade_details.png" width="250" alt="Trade Details" /> | <img src="docs/screenshots/3_live_feed.png" width="250" alt="Live Feed" /> |
+
+| 4. Settings | 5. Developer Tools | 6. Telegram Alert (AI) |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/4_settings.png" width="250" alt="Settings" /> | <img src="docs/screenshots/5_developer.png" width="250" alt="Developer Tools" /> | <img src="docs/screenshots/6_telegram.png" width="250" alt="Telegram Notification" /> |
+
 ## 📡 Data Source Providers (Free & Built-in!)
 
 All sources can be toggled via the **Settings → Data Sources** UI:

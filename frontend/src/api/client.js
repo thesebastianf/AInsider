@@ -94,5 +94,9 @@ export const getSystemStats = () => request('/system/stats');
 export const getSystemLogs = (limit = 100) => request(`/system/logs?limit=${limit}`);
 export const triggerPipeline = () =>
   request('/system/trigger-pipeline', { method: 'POST' });
+export const triggerBackup = () =>
+  request('/system/trigger-backup', { method: 'POST' });
+export const triggerPrices = () =>
+  request('/system/trigger-prices', { method: 'POST' });
 export const healthCheck = () => request('/health');
 export const getInsights = () => request('/system/insights');

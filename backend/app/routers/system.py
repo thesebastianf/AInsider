@@ -140,6 +140,19 @@ def trigger_backup():
         add_log("ERROR", f"Manual backup error: {str(e)}")
         return {"status": "error", "message": str(e)}
 
+@router.post("/system/trigger-prices")
+def trigger_price_update():
+    """Manually trigger a yfinance price update."""
+    from app.services.price_updater import update_all_prices
+    try:
+        add_log("INFO", "Manual price update trigger requested")
+        update_all_prices()
+        add_log("INFO", "Manual price update completed")
+        return {"status": "success", "message": "Price update triggered successfully"}
+    except Exception as e:
+        add_log("ERROR", f"Price update error: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
 
 @router.get("/system/insights")
 def get_insights(db: Session = Depends(get_db)):

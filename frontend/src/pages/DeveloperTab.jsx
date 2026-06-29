@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useApi } from '../hooks/useApi';
-import { getSystemStats, getSystemLogs } from '../api/client';
-import { BarChart3, Clock, Users, Activity, Cpu, Database } from 'lucide-react';
+import { getSystemStats, getSystemLogs, triggerPipeline, triggerBackup, triggerPrices } from '../api/client';
+import { BarChart3, Clock, Users, Activity, Cpu, Database, Play, Loader2, Github, Coffee } from 'lucide-react';
 import StatWidget from '../components/StatWidget';
 import LogConsole from '../components/LogConsole';
 
@@ -25,6 +25,28 @@ export default function DeveloperTab() {
     const interval = setInterval(refetchLogs, 5000);
     return () => clearInterval(interval);
   }, [refetchLogs]);
+
+  const [isLoadingPipeline, setIsLoadingPipeline] = useState(false);
+  const [isLoadingPrices, setIsLoadingPrices] = useState(false);
+  const [isLoadingBackup, setIsLoadingBackup] = useState(false);
+
+  const handleRunPipeline = async () => {
+    setIsLoadingPipeline(true);
+    try { await triggerPipeline(); } catch (e) { console.error(e); }
+    setIsLoadingPipeline(false);
+  };
+
+  const handleRunPrices = async () => {
+    setIsLoadingPrices(true);
+    try { await triggerPrices(); } catch (e) { console.error(e); }
+    setIsLoadingPrices(false);
+  };
+
+  const handleRunBackup = async () => {
+    setIsLoadingBackup(true);
+    try { await triggerBackup(); } catch (e) { console.error(e); }
+    setIsLoadingBackup(false);
+  };
 
   return (
     <div className="px-5 py-5 grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in items-start">
@@ -79,7 +101,16 @@ export default function DeveloperTab() {
 
           {/* Pipeline Status */}
           <div className="glass-card p-3 space-y-2">
-            <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">Data Ingestion Pipeline</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">Data Ingestion Pipeline</span>
+              <button 
+                onClick={handleRunPipeline} disabled={isLoadingPipeline}
+                className="p-1 rounded bg-surface-2 hover:bg-surface-3 transition-colors border border-border disabled:opacity-50"
+                title="Run Now"
+              >
+                {isLoadingPipeline ? <Loader2 size={12} className="animate-spin text-slate-400" /> : <Play size={12} className="text-emerald-400" />}
+              </button>
+            </div>
             <div className="flex justify-between items-center text-[11px]">
               <span className="text-slate-500">Last Ingestion Run</span>
               <span className="text-slate-300 font-mono">
@@ -96,7 +127,16 @@ export default function DeveloperTab() {
 
           {/* yfinance Price Updater Status */}
           <div className="glass-card p-3 space-y-2">
-            <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">yfinance Stock Price Updater</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">yfinance Stock Price Updater</span>
+              <button 
+                onClick={handleRunPrices} disabled={isLoadingPrices}
+                className="p-1 rounded bg-surface-2 hover:bg-surface-3 transition-colors border border-border disabled:opacity-50"
+                title="Run Now"
+              >
+                {isLoadingPrices ? <Loader2 size={12} className="animate-spin text-slate-400" /> : <Play size={12} className="text-emerald-400" />}
+              </button>
+            </div>
             <div className="flex justify-between items-center text-[11px]">
               <span className="text-slate-500">Last Price Update</span>
               <span className="text-slate-300 font-mono">
@@ -113,13 +153,33 @@ export default function DeveloperTab() {
 
           {/* Database Backup Status */}
           <div className="glass-card p-3 space-y-2">
-            <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">Database Backup</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">Database Backup</span>
+              <button 
+                onClick={handleRunBackup} disabled={isLoadingBackup}
+                className="p-1 rounded bg-surface-2 hover:bg-surface-3 transition-colors border border-border disabled:opacity-50"
+                title="Run Now"
+              >
+                {isLoadingBackup ? <Loader2 size={12} className="animate-spin text-slate-400" /> : <Play size={12} className="text-emerald-400" />}
+              </button>
+            </div>
             <div className="flex justify-between items-center text-[11px]">
               <span className="text-slate-500">Next Scheduled Backup</span>
               <span className="text-slate-300 font-mono">
                 {stats?.next_backup_run ? new Date(stats.next_backup_run).toLocaleString() : 'Not scheduled'}
               </span>
             </div>
+          </div>
+
+          {/* Links */}
+          <div className="glass-card p-3 flex justify-around items-center mt-4">
+            <a href="https://github.com/thesebastianf/AInsider" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-xs font-semibold">
+              <Github size={16} /> GitHub
+            </a>
+            <div className="w-px h-4 bg-slate-700"></div>
+            <a href="https://ko-fi.com/thesebastianf" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-slate-400 hover:text-[#FF5E5B] transition-colors text-xs font-semibold">
+              <Coffee size={16} /> Ko-fi
+            </a>
           </div>
         </div>
       </div>
