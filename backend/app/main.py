@@ -132,13 +132,13 @@ _UPLOAD_DIR = _Path("/app/uploads") if _Path("/app").exists() else _Path(__file_
 _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(_UPLOAD_DIR)), name="uploads")
 
-    # SPA fallback: serve index.html for all non-API routes
+# SPA fallback: serve index.html for all non-API routes
+if STATIC_DIR.exists():
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         """Serve the React SPA for any non-API route."""
-        # Try to serve the file directly
         file_path = STATIC_DIR / full_path
         if file_path.is_file():
             return FileResponse(str(file_path))
-        # Fallback to index.html (SPA routing)
         return FileResponse(str(STATIC_DIR / "index.html"))
+
