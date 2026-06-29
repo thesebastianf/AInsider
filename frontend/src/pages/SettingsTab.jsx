@@ -369,36 +369,50 @@ function DataSourceSection() {
   const providers = settings?.data_source_providers || [];
   
   const [fieldsData, setFieldsData] = useState(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [provType, setProvType] = useState('house');
-  const [name, setName] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [provType, setProvType] = useState('');
   const [configFields, setConfigFields] = useState({});
   const [syncing, setSyncing] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
 
-  // Fetch fields lazily
+  // Fetch fields on mount
   useEffect(() => {
-    if (showAdd && !fieldsData) {
-      fetch('/api/settings/datasources/fields')
-        .then(res => res.json())
-        .then(setFieldsData)
-        .catch(console.error);
+    fetch('/api/settings/datasources/fields')
+      .then(res => res.json())
+      .then(setFieldsData)
+      .catch(console.error);
+  }, []);
+
+  const handleOpenEdit = (p) => {
+    if (editingId === p.id) {
+      setEditingId(null);
+      return;
     }
-  }, [showAdd, fieldsData]);
-
-  useEffect(() => {
-    setConfigFields({});
-  }, [provType]);
-
-  const handleAdd = async () => {
-    if (!name) return;
-    await fetch('/api/settings/datasources', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider_type: provType, name, config_json: configFields })
+    setEditingId(p.id);
+    setProvType(p.provider_type);
+    const safeConfig = { ...p.config_json };
+    // clean passwords if needed
+    Object.keys(safeConfig).forEach(k => {
+      if ((k.includes('token') || k.includes('key')) && typeof safeConfig[k] === 'string' && safeConfig[k].includes('***')) {
+        safeConfig[k] = '';
+      }
     });
-    setShowAdd(false);
-    setName('');
+    setConfigFields(safeConfig);
+  };
+
+  const handleSave = async () => {
+    const filteredConfig = { ...configFields };
+    Object.keys(filteredConfig).forEach(k => {
+      if ((k.includes('token') || k.includes('key')) && !filteredConfig[k]) {
+        delete filteredConfig[k];
+      }
+    });
+    await fetch(`/api/settings/datasources/${editingId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config_json: filteredConfig })
+    });
+    setEditingId(null);
     setConfigFields({});
     refetchSettings();
   };
@@ -409,11 +423,6 @@ function DataSourceSection() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_enabled: !p.is_enabled })
     });
-    refetchSettings();
-  };
-
-  const handleDelete = async (id) => {
-    await fetch(`/api/settings/datasources/${id}`, { method: 'DELETE' });
     refetchSettings();
   };
 
@@ -428,7 +437,6 @@ function DataSourceSection() {
     setSyncing(false);
   };
 
-  const currentFields = fieldsData?.[provType] || {};
   const DS_ICONS = { house: '🏛️', senate: '🏛️', quiver: '📈', sec13f: '🏦', sec_form4: '🏢', directors_dealings: '🇪🇺' };
   const DS_URLS = {
     house: 'https://congress.kadoa.com/data/trades.json',
@@ -439,15 +447,6 @@ function DataSourceSection() {
     directors_dealings: 'https://www.wallstreet-online.de/rss/nachrichten-directors-dealings.xml',
   };
 
-  const DS_DESCS = {
-    house: 'Official Financial Disclosure Reports filed by US Representatives, parsed in real-time by the House Stock Watcher project.',
-    senate: 'Public Financial Disclosure reports filed by US Senators, aggregated by the Senate Stock Watcher project.',
-    quiver: 'Alternative data service tracking politician trades, lobbying activities, and government contracts. Requires an API Key.',
-    sec13f: 'Official quarterly holdings reports (Form 13F) filed by major institutional fund managers to the US SEC EDGAR system.',
-    sec_form4: 'Real-time statement of changes in beneficial ownership of securities (Form 4) filed by corporate directors, officers, and CEOs to the US SEC EDGAR system.',
-    directors_dealings: 'Real-time management transaction reports (Directors\' Dealings) filed by DAX / European corporate board members and executives.',
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -455,99 +454,88 @@ function DataSourceSection() {
           <Database size={16} className="text-blue-400" />
           <span className="text-sm font-semibold text-slate-200">Data Sources</span>
         </div>
-        <button onClick={() => setShowAdd(!showAdd)}
-          className="p-1.5 rounded-lg bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors">
-          <Plus size={14} />
-        </button>
       </div>
-
-      {showAdd && (
-        <div className="glass-card p-4 space-y-3 animate-slide-up">
-          <div className="flex flex-wrap gap-1.5">
-            {['house', 'senate', 'quiver', 'sec13f', 'sec_form4', 'directors_dealings'].map(t => (
-              <button key={t} onClick={() => setProvType(t)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
-                  provType === t ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'
-                }`}>
-                {DS_ICONS[t]} {t}
-              </button>
-            ))}
-          </div>
-
-          {/* Selected Provider Info */}
-          <div className="p-2.5 bg-slate-900/50 dark:bg-slate-950/50 rounded-lg border border-slate-800/30 dark:border-slate-800/60 text-[10px] text-slate-400 leading-relaxed space-y-1">
-            <span className="font-semibold text-slate-300 dark:text-slate-200 block uppercase tracking-wider text-[9px]">
-              Source Information
-            </span>
-            <p>{DS_DESCS[provType]}</p>
-            <p className="font-mono text-[9px] text-slate-500 dark:text-slate-500 truncate">{DS_URLS[provType]}</p>
-          </div>
-
-          <input placeholder="Display name" value={name} onChange={e => setName(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
-          {Object.entries(currentFields).map(([key, label]) => (
-            <input key={key} placeholder={label} value={configFields[key] || ''}
-              onChange={e => setConfigFields(f => ({ ...f, [key]: e.target.value }))}
-              type={key.includes('token') || key.includes('key') ? 'password' : 'text'}
-              className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
-          ))}
-          <button onClick={handleAdd}
-            className="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600 transition-colors">
-            Add Source
-          </button>
-        </div>
-      )}
 
       {providers.length === 0 ? (
          <div className="text-xs text-slate-500 italic p-2 text-center bg-slate-900/50 rounded-lg">
-           No active data sources. The pipeline will not fetch trades.
+           No data sources configured.
          </div>
       ) : (
-        providers.map(p => (
-          <div key={p.id} className="glass-card p-3 flex items-center gap-3">
-            <span className="text-lg">{DS_ICONS[p.provider_type] || '📡'}</span>
-            <div className="flex-1 min-w-0">
-              <span className="text-sm font-medium text-slate-200 truncate block">{p.name}</span>
-              <p className="text-[10px] text-slate-500 truncate mt-0.5" title={DS_URLS[p.provider_type]}>
-                {DS_URLS[p.provider_type] || p.provider_type}
-              </p>
-              <p className="text-[9px] text-slate-400 mt-1 flex flex-wrap items-center gap-1.5">
-                <span>{p.last_fetch ? `Synced: ${new Date(p.last_fetch).toLocaleString()}` : 'Not synced yet'}</span>
-                {p.config_json?.last_status === 'success' && (
-                  <span className="px-1 py-0.5 rounded text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/10 font-bold font-mono">
-                    +{p.config_json.last_count} rows
-                  </span>
+        providers.map(p => {
+          const hasConfigFields = Object.keys(fieldsData?.[p.provider_type] || {}).length > 0;
+          return (
+          <div key={p.id} className="space-y-2">
+            <div className="glass-card p-3 flex items-center gap-3">
+              <span className="text-lg">{DS_ICONS[p.provider_type] || '📡'}</span>
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-slate-200 truncate block">{p.name}</span>
+                <p className="text-[10px] text-slate-500 truncate mt-0.5" title={DS_URLS[p.provider_type]}>
+                  {DS_URLS[p.provider_type] || p.provider_type}
+                </p>
+                <p className="text-[9px] text-slate-400 mt-1 flex flex-wrap items-center gap-1.5">
+                  <span>{p.last_fetch ? `Synced: ${new Date(p.last_fetch).toLocaleString()}` : 'Not synced yet'}</span>
+                  {p.config_json?.last_status === 'success' && (
+                    <span className="px-1 py-0.5 rounded text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/10 font-bold font-mono">
+                      +{p.config_json.last_count} rows
+                    </span>
+                  )}
+                  {p.config_json?.last_status === 'error' && (
+                    <span 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(p.config_json.last_error || '');
+                        setCopiedId(p.id);
+                        setTimeout(() => setCopiedId(null), 2000);
+                      }}
+                      title="Click to copy full error message"
+                      className="px-1 py-0.5 rounded text-[8px] bg-red-500/10 text-red-400 border border-red-500/10 font-bold font-mono truncate max-w-[150px] cursor-pointer hover:bg-red-500/20 active:bg-red-500/30 transition-all select-none"
+                    >
+                      {copiedId === p.id ? 'Copied!' : `Error: ${p.config_json.last_error}`}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {hasConfigFields && (
+                  <button onClick={() => handleOpenEdit(p)} title="Configure"
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      editingId === p.id ? 'bg-slate-700/50 text-slate-200' : 'text-slate-500 hover:bg-slate-700/50 hover:text-slate-300'
+                    }`}>
+                    <Edit2 size={14} />
+                  </button>
                 )}
-                {p.config_json?.last_status === 'error' && (
-                  <span 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigator.clipboard.writeText(p.config_json.last_error || '');
-                      setCopiedId(p.id);
-                      setTimeout(() => setCopiedId(null), 2000);
-                    }}
-                    title="Click to copy full error message"
-                    className="px-1 py-0.5 rounded text-[8px] bg-red-500/10 text-red-400 border border-red-500/10 font-bold font-mono truncate max-w-[150px] cursor-pointer hover:bg-red-500/20 active:bg-red-500/30 transition-all select-none"
-                  >
-                    {copiedId === p.id ? 'Copied!' : `Error: ${p.config_json.last_error}`}
-                  </span>
-                )}
-              </p>
+                <button onClick={() => handleToggle(p)} title={p.is_enabled ? 'Disable' : 'Enable'}
+                  className={`p-1.5 rounded-lg transition-colors ${
+                    p.is_enabled ? 'text-emerald-400 hover:bg-emerald-500/15' : 'text-slate-600 hover:bg-slate-700/50'
+                  }`}>
+                  <Power size={14} />
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <button onClick={() => handleToggle(p)} title={p.is_enabled ? 'Disable' : 'Enable'}
-                className={`p-1.5 rounded-lg transition-colors ${
-                  p.is_enabled ? 'text-emerald-400 hover:bg-emerald-500/15' : 'text-slate-600 hover:bg-slate-700/50'
-                }`}>
-                <Power size={14} />
-              </button>
-              <button onClick={() => handleDelete(p.id)} title="Delete"
-                className="p-1.5 rounded-lg hover:bg-red-500/15 transition-colors text-slate-400 hover:text-red-400">
-                <Trash2 size={14} />
-              </button>
-            </div>
+            
+            {/* Edit Form Dropdown */}
+            {editingId === p.id && (
+              <div className="glass-card p-4 space-y-3 animate-slide-up bg-slate-900/30">
+                {Object.entries(fieldsData?.[p.provider_type] || {}).map(([key, label]) => (
+                  <input key={key} placeholder={label} value={configFields[key] || ''}
+                    onChange={e => setConfigFields(f => ({ ...f, [key]: e.target.value }))}
+                    type={key.includes('token') || key.includes('key') ? 'password' : 'text'}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
+                ))}
+                <div className="flex justify-end gap-2 pt-1">
+                  <button onClick={() => setEditingId(null)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors">
+                    Cancel
+                  </button>
+                  <button onClick={handleSave}
+                    className="px-4 py-1.5 rounded-lg bg-blue-500 text-white text-xs font-semibold hover:bg-blue-600 transition-colors">
+                    Save Config
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        ))
+        )})
       )}
 
       <div className="glass-card p-3 space-y-3 mt-4 bg-blue-900/10 border-blue-900/30">

@@ -268,20 +268,17 @@ def run_pipeline() -> dict:
 
                 # Step 6: Notifications to all enabled providers
                 try:
-                    # Check if person is followed or has subscriptions
-                    has_subs = db.query(Subscription).filter(
-                        Subscription.target_person_id == person.id
-                    ).count() > 0
-
-                    if has_subs:
+                    subscription = db.query(Subscription).filter(Subscription.target_person_id == person.id).first()
+                    if subscription:
                         notify_all_enabled(
                             db=db,
                             person_name=person.name,
-                            trade_type=trade.type,
-                            ticker=trade.ticker,
-                            amount=trade.amount_range,
+                            trade_type=raw.trade_type,
+                            ticker=raw.ticker,
+                            amount=raw.amount_range,
                             ai_score=trade.ai_score or 0,
                             ai_summary=trade.ai_summary or "No AI evaluation",
+                            trade_date=raw.trade_date.isoformat() if raw.trade_date else "",
                         )
                         stats["notifications_sent"] += 1
                 except Exception as e:

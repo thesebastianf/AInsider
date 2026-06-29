@@ -23,15 +23,25 @@ logger = logging.getLogger("ainsider.notifier")
 def _format_message(
     person_name: str, trade_type: str, ticker: str,
     amount: str, ai_score: int, ai_summary: str,
+    trade_date: str = "",
 ) -> str:
     action_emoji = "📈" if trade_type == "BUY" else "📉"
+    date_str = f"📅 {trade_date}\n" if trade_date else ""
+    
+    # If LLM is not configured, AI score is 0 and summary is empty
+    ai_section = ""
+    if ai_summary:
+        ai_section = f"🧠 AI Score: {ai_score}/10\n📝 {ai_summary}"
+    else:
+        ai_section = "🤖 AI enrichment unavailable (check settings)"
+        
     return (
         f"🚨 [AI]nsider Alert\n\n"
         f"👤 {person_name}\n"
         f"{action_emoji} {trade_type} {ticker}\n"
+        f"{date_str}"
         f"💰 {amount}\n\n"
-        f"🧠 AI Score: {ai_score}/10\n"
-        f"📝 {ai_summary}"
+        f"{ai_section}"
     )
 
 
@@ -171,12 +181,13 @@ def notify_all_enabled(
     amount: str,
     ai_score: int,
     ai_summary: str,
+    trade_date: str = "",
 ) -> Dict[str, bool]:
     """
     Send notifications to ALL enabled providers.
     Returns dict with provider names and success status.
     """
-    message = _format_message(person_name, trade_type, ticker, amount, ai_score, ai_summary)
+    message = _format_message(person_name, trade_type, ticker, amount, ai_score, ai_summary, trade_date)
     title = f"🚨 {person_name} {trade_type} {ticker}"
 
     configs = (

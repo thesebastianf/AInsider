@@ -409,9 +409,9 @@ class SEC13FProvider(BaseDataSourceProvider):
         cik_list_raw = cfg.get("cik_list", "")
         
         if not cik_list_raw:
-            logger.warning("SEC13F: No CIKs configured. Add CIK list in Settings -> Data Sources.")
-            return []
-        
+            logger.warning("SEC13F: No CIKs configured. Using defaults (Aschenbrenner, Buffett).")
+            cik_list_raw = "2045724,1067983"
+            
         cik_list = [c.strip().zfill(10) for c in cik_list_raw.split(",") if c.strip()]
         all_trades = []
         

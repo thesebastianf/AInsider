@@ -152,7 +152,7 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
                 >
                   <Bell className={`h-3.5 w-3.5 transition-all ${
                     person.is_subscribed 
-                      ? 'text-cyan-400 fill-cyan-400/30 drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]' 
+                      ? 'text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' 
                       : 'text-slate-400 dark:text-slate-500'
                   }`} />
                 </button>

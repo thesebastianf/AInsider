@@ -129,9 +129,9 @@ def seed_database(db: Session) -> bool:
                 committee_affiliations=p["committees"],
                 photo_url=p.get("photo_url"),
                 description=p.get("description"),
-                is_tracked=True,
+                is_tracked=False,
                 is_active=True,
-                is_followed=p["name"] in ["Nancy Pelosi", "Tommy Tuberville", "Warren Buffett", "Jensen Huang"],
+                is_followed=False,
             )
             db.add(person)
             seeded = True
@@ -181,6 +181,7 @@ def seed_database(db: Session) -> bool:
     default_sources = [
         ("house", "House Stock Watcher"),
         ("senate", "Senate Stock Watcher"),
+        ("quiver", "Quiver Quantitative (Requires API Key)"),
         ("sec13f", "SEC 13F (Fund Managers)"),
         ("sec_form4", "SEC Form 4 (Corporate Insiders)"),
         ("directors_dealings", "Directors' Dealings (DAX / Europe)"),
@@ -200,9 +201,15 @@ def seed_database(db: Session) -> bool:
                         "Add more CIKs comma-separated. Find CIKs at data.sec.gov/submissions/CIK######.json"
                     )
                 }
+            elif p_type == "quiver":
+                default_cfg = {
+                    "api_key": "",
+                    "last_status": "error",
+                    "last_error": "Please provide API Key"
+                }
             ds_config = DataSourceConfig(
                 provider_type=p_type, name=name,
-                config_json=default_cfg, is_enabled=(p_type == "sec13f")
+                config_json=default_cfg, is_enabled=(p_type != "quiver")
             )
             db.add(ds_config)
             seeded = True
