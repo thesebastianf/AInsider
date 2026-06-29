@@ -250,11 +250,12 @@ DATASOURCE_PROVIDER_FIELDS = {
     "house": {},
     "senate": {},
     "quiver": {"api_key": "Quiver API Key"},
-    "sec13f": {},
-    "sec13d": {},
+    "sec13f": {"cik_list": "CIK List (comma-separated 10-digit numbers)"},
+    "sec13d": {"cik_list": "CIK List (comma-separated 10-digit numbers)"},
     "sec_form4": {},
     "finnhub": {"api_key": "Finnhub API Key"},
     "directors_dealings": {},
+    "social_inverse_cramer": {},
 }
 
 class DataSourceConfigCreate(BaseModel):

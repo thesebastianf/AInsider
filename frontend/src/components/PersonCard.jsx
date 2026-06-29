@@ -344,11 +344,11 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
       {showHistory && (
         <div 
           onClick={() => setShowHistory(false)}
-          className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-fade-in"
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
+            className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl overflow-hidden animate-slide-up"
           >
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/50">

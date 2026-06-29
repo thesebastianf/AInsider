@@ -71,6 +71,7 @@ def seed_database(db: Session) -> bool:
         ("sec_form4", "SEC Form 4 (SEC EDGAR - Free)"),
         ("finnhub", "Finnhub Form 4 (Requires API Key)"),
         ("directors_dealings", "Directors' Dealings (DAX / Europe)"),
+        ("social_inverse_cramer", "Inverse Cramer Tracker (Social)"),
     ]
     for p_type, name in default_sources:
         existing = db.query(DataSourceConfig).filter(DataSourceConfig.provider_type == p_type).first()
@@ -80,17 +81,25 @@ def seed_database(db: Session) -> bool:
             default_cfg = {}
             if p_type == "sec13f":
                 default_cfg = {
-                    "cik_list": "2045724,1067983",  # Situational Awareness LP, Berkshire Hathaway
+                    "cik_list": "2045724,1067983,0001649339,0001336528,0001029160,0001037389,0001350694,0000921669,0001423053,0001568820",
                     "_notes": (
                         "CIKs: 2045724=Situational Awareness LP (Aschenbrenner), "
-                        "1067983=Berkshire Hathaway (Buffett). "
+                        "1067983=Berkshire Hathaway (Buffett), "
+                        "0001649339=Scion Asset Management (Burry), "
+                        "0001336528=Pershing Square (Ackman), "
+                        "0001029160=Duquesne Family Office (Druckenmiller), "
+                        "0001037389=Renaissance Technologies (Simons), "
+                        "0001350694=Bridgewater Associates (Dalio), "
+                        "0000921669=Icahn Associates, "
+                        "0001423053=Tudor Investment Corp (Jones), "
+                        "0001568820=Point72 Asset Management (Cohen). "
                         "Add more CIKs comma-separated. Find CIKs at data.sec.gov/submissions/CIK######.json"
                     )
                 }
             elif p_type == "sec13d":
                 default_cfg = {
-                    "cik_list": "0000921669,0001336528,0000902219",
-                    "_notes": "Carl Icahn (921669), Pershing Square (1336528), Elliott (902219)"
+                    "cik_list": "0000921669,0001336528,0000902219,0001166559",
+                    "_notes": "Carl Icahn (921669), Pershing Square (1336528), Elliott Management (902219), JANA Partners (1166559)"
                 }
             elif p_type == "quiver":
                 default_cfg = {

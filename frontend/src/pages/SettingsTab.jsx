@@ -437,7 +437,15 @@ function DataSourceSection() {
     setSyncing(false);
   };
 
-  const DS_ICONS = { house: '🏛️', senate: '🏛️', quiver: '📈', sec13f: '🏦', sec_form4: '🏢', directors_dealings: '🇪🇺' };
+  const DS_ICONS = { 
+    house: '🏛️', 
+    senate: '🏛️', 
+    quiver: '📈', 
+    sec13f: '🏦', 
+    sec_form4: '🏢', 
+    directors_dealings: '🇪🇺',
+    social_inverse_cramer: '🤡'
+  };
   const DS_URLS = {
     house: 'https://congress.kadoa.com/data/trades.json',
     senate: 'https://raw.githubusercontent.com/timothycarambat/senate-stock-watcher-data/master/aggregate/all_transactions.json',
@@ -445,6 +453,7 @@ function DataSourceSection() {
     sec13f: 'SEC EDGAR (13F RSS Feed / API)',
     sec_form4: 'https://www.sec.gov/cgi-bin/browse-edgar (Form 4 Atom Feed)',
     directors_dealings: 'https://www.wallstreet-online.de/rss/nachrichten-directors-dealings.xml',
+    social_inverse_cramer: 'CNBC Search RSS Feed (Jim Cramer Mentions)'
   };
 
   return (
@@ -516,11 +525,23 @@ function DataSourceSection() {
             {/* Edit Form Dropdown */}
             {editingId === p.id && (
               <div className="glass-card p-4 space-y-3 animate-slide-up bg-slate-900/30">
-                {Object.entries(fieldsData?.[p.provider_type] || {}).map(([key, label]) => (
-                  <input key={key} placeholder={label} value={configFields[key] || ''}
-                    onChange={e => setConfigFields(f => ({ ...f, [key]: e.target.value }))}
-                    type={key.includes('token') || key.includes('key') ? 'password' : 'text'}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
+                 {Object.entries(fieldsData?.[p.provider_type] || {}).map(([key, label]) => (
+                  <div key={key} className="space-y-1">
+                    <input placeholder={label} value={configFields[key] || ''}
+                      onChange={e => setConfigFields(f => ({ ...f, [key]: e.target.value }))}
+                      type={key.includes('token') || key.includes('key') ? 'password' : 'text'}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
+                    {key === 'cik_list' && (
+                      <div className="text-[10px] text-slate-500 leading-relaxed space-y-1 mt-1 p-2 bg-slate-950/40 rounded-lg border border-slate-800">
+                        <p className="font-semibold text-slate-400">💡 How to edit & add CIKs:</p>
+                        <p>A <span className="text-cyan-400 font-medium">CIK (Central Index Key)</span> is a unique 10-digit identifier assigned by the SEC to individuals or funds.</p>
+                        <p>To add a new fund/manager, find their CIK using the SEC Edgar search or by searching: 
+                          <code className="text-blue-400 block mt-0.5 select-all">https://data.sec.gov/submissions/CIK{`{10-digit-zero-padded}`}.json</code>
+                        </p>
+                        <p>Format: Comma-separated list of CIK numbers. Example: <span className="font-mono text-slate-400">2045724,1067983,0001649339</span></p>
+                      </div>
+                    )}
+                  </div>
                 ))}
                 <div className="flex justify-end gap-2 pt-1">
                   <button onClick={() => setEditingId(null)}

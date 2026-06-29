@@ -925,6 +925,82 @@ class DirectorsDealingsProvider(BaseDataSourceProvider):
         return trades
 
 
+class SocialInverseCramerProvider(BaseDataSourceProvider):
+    """Parses CNBC news rss feed mentioning Cramer's recommendations.
+    Transforms Cramers recommendations to inverse trade signals:
+      - Buy / bullish call -> Synthetic SELL trade
+      - Sell / bearish call -> Synthetic BUY trade
+    Does not require any API Key, queries public feeds.
+    """
+    
+    FEED_URL = "https://search.cnbc.com/rs/search/all/view.xml?partnerId=2000&keywords=Jim%20Cramer"
+
+    def fetch_trades(self, limit: int = 30) -> List[RawTrade]:
+        import xml.etree.ElementTree as ET
+        trades = []
+        try:
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            resp = httpx.get(self.FEED_URL, headers=headers, timeout=15.0)
+            if resp.status_code != 200:
+                return []
+                
+            root = ET.fromstring(resp.content)
+            items = root.findall(".//item")
+            
+            for item in items[:limit]:
+                title = item.find("title")
+                title_text = title.text if title is not None else ""
+                desc = item.find("description")
+                desc_text = desc.text if desc is not None else ""
+                link = item.find("link")
+                link_url = link.text if link is not None else ""
+                
+                # Check for ticker mentions in brackets like (AAPL), (TSLA)
+                tickers = re.findall(r"\(([A-Z]{1,5})\)", title_text + " " + desc_text)
+                if not tickers:
+                    continue
+                    
+                combined_text = (title_text + " " + desc_text).lower()
+                
+                # Exclude interview segments
+                if "interview" in combined_text:
+                    continue
+                    
+                # Determine Cramers advice and invert it
+                is_buy = any(x in combined_text for x in ["buy", "bullish", "recommend", "recommendation", "own", "pick", "favorite"])
+                is_sell = any(x in combined_text for x in ["sell", "bearish", "avoid", "dump", "don't buy", "stay away", "warning"])
+                
+                # Inverse Logic: Cramer BUY -> Inverse SELL, Cramer SELL -> Inverse BUY
+                if is_buy and not is_sell:
+                    trade_type = "SELL"
+                elif is_sell and not is_buy:
+                    trade_type = "BUY"
+                else:
+                    # Default fallback to BUY (if just general mentions)
+                    trade_type = "SELL" 
+                    
+                for ticker in set(tickers):
+                    # Filter out noise tickers that are not actual stock symbols
+                    if ticker in ("CNBC", "USA", "CEO", "IPO", "ETF", "SPY", "QQQ"):
+                        continue
+                        
+                    trades.append(RawTrade(
+                        person_name="Inverse Cramer",
+                        person_category="Social",
+                        committees=["Inverse Cramer Tracker"],
+                        ticker=ticker,
+                        trade_type=trade_type,
+                        amount_range="$10k-$50k",  # Synthetic standard size
+                        trade_date=date.today(),
+                        filing_date=date.today(),
+                        source_url=link_url
+                    ))
+                    logger.info(f"Inverse Cramer parsed: {trade_type} {ticker} (Inverse of Cramer Call)")
+        except Exception as e:
+            logger.error(f"SocialInverseCramerProvider: Failed to parse feed: {e}")
+        return trades
+
+
 PROVIDER_CLASSES = {
     "house": HouseStockWatcherProvider,
     "senate": SenateStockWatcherProvider,
@@ -935,6 +1011,7 @@ PROVIDER_CLASSES = {
     "sec_form4": SECForm4Provider,
     "finnhub": FinnhubForm4Provider,
     "directors_dealings": DirectorsDealingsProvider,
+    "social_inverse_cramer": SocialInverseCramerProvider,
 }
 
 
