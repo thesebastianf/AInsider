@@ -218,18 +218,6 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
                   }`} />
                 </button>
 
-                {/* Subscribe Button */}
-                <button 
-                  onClick={(e) => { e.stopPropagation(); onToggleSubscribe(person.id); }} 
-                  className="p-1.5 bg-surface-2 rounded-full hover:bg-surface-3 transition-colors border border-border"
-                  title={person.is_subscribed ? "Unsubscribe from alerts" : "Subscribe to alerts"}
-                >
-                  <Bell className={`h-3.5 w-3.5 transition-all ${
-                    person.is_subscribed 
-                      ? 'text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' 
-                      : 'text-slate-400 dark:text-slate-500'
-                  }`} />
-                </button>
 
                 {/* Untrack Button */}
                 <button 
