@@ -146,8 +146,8 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
         onClick={handleOpenHistory}
         className="bg-surface rounded-xl p-4 border border-border shadow-lg relative overflow-hidden backdrop-blur-sm animate-fade-in transition-all hover:border-border-bright cursor-pointer hover:shadow-cyan-950/10 hover:shadow-2xl"
       >
-        {/* Subtle Gradient Background for active follows */}
-        {person.is_followed && (
+        {/* Subtle Gradient Background for active subscribers */}
+        {person.is_subscribed && (
           <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-bl-[100px] pointer-events-none transition-opacity duration-500" />
         )}
         
@@ -184,7 +184,7 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
             </div>
             
             <div className="min-w-0 flex-1">
-              <h3 className="text-lg font-bold leading-tight flex items-center gap-1.5 min-w-0"
+              <h3 className="text-sm md:text-base xl:text-sm font-bold leading-tight flex items-center gap-1.5 min-w-0"
                 style={{ color: 'var(--text-bright)' }}
                 title={person.name}
               >
@@ -205,14 +205,14 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
           <div className="flex items-center gap-1 z-20 shrink-0">
             {person.is_tracked ? (
               <>
-                {/* Follow Button */}
+                {/* Subscribe Button */}
                 <button 
-                  onClick={(e) => { e.stopPropagation(); onToggleFollow(person.id); }} 
+                  onClick={(e) => { e.stopPropagation(); onToggleSubscribe(person.id); }} 
                   className="p-1.5 bg-surface-2 rounded-full hover:bg-surface-3 transition-colors border border-border"
-                  title={person.is_followed ? "Unfollow" : "Follow"}
+                  title={person.is_subscribed ? "Unsubscribe from alerts" : "Subscribe to alerts"}
                 >
-                  <Star className={`h-3.5 w-3.5 transition-all ${
-                    person.is_followed 
+                  <Bell className={`h-3.5 w-3.5 transition-all ${
+                    person.is_subscribed 
                       ? 'text-yellow-500 fill-yellow-500 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]' 
                       : 'text-slate-400 dark:text-slate-500'
                   }`} />

@@ -265,8 +265,8 @@ export default function PortfoliosTab() {
         ) : (
           [...(personsData?.persons || [])]
             .sort((a, b) => {
-              if (a.is_followed && !b.is_followed) return -1;
-              if (!a.is_followed && b.is_followed) return 1;
+              if (a.is_subscribed && !b.is_subscribed) return -1;
+              if (!a.is_subscribed && b.is_subscribed) return 1;
               return a.name.localeCompare(b.name);
             })
             .map((person, i) => (

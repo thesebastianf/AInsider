@@ -159,14 +159,14 @@ def get_persons(
 
     # Sort
     if sort_by == 'trade_count':
-        response_persons.sort(key=lambda x: (not x.is_followed, -x.trade_count))
+        response_persons.sort(key=lambda x: (not x.is_subscribed, -x.trade_count))
     elif sort_by == 'performance':
-        response_persons.sort(key=lambda x: (not x.is_followed, -(x.avg_trade_return_pct if x.avg_trade_return_pct is not None else -99999.0)))
+        response_persons.sort(key=lambda x: (not x.is_subscribed, -(x.avg_trade_return_pct if x.avg_trade_return_pct is not None else -99999.0)))
     elif sort_by == 'recent_trade':
-        response_persons.sort(key=lambda x: (not x.is_followed, -(x.latest_trade.trade_date.toordinal()) if x.latest_trade and x.latest_trade.trade_date else 0))
+        response_persons.sort(key=lambda x: (not x.is_subscribed, -(x.latest_trade.trade_date.toordinal()) if x.latest_trade and x.latest_trade.trade_date else 0))
     else:
         # Default to name sorting (case insensitive)
-        response_persons.sort(key=lambda x: (not x.is_followed, x.name.lower()))
+        response_persons.sort(key=lambda x: (not x.is_subscribed, x.name.lower()))
 
     # Apply pagination in Python
     paginated = response_persons[offset:offset + limit]
@@ -213,11 +213,28 @@ def get_available_persons(
 @router.put("/{person_id}/track")
 def toggle_tracking(person_id: int, is_tracked: bool = Query(True), db: Session = Depends(get_db)):
     """Toggle tracking status (is_tracked) for a target person."""
+    from app.models import Subscription
+    
     person = db.query(TargetPerson).filter(TargetPerson.id == person_id).first()
     if not person:
         raise HTTPException(status_code=404, detail="Person not found")
         
     person.is_tracked = is_tracked
+    
+    # Auto-subscribe / unsubscribe
+    existing_sub = db.query(Subscription).filter(
+        Subscription.user_id == "default",
+        Subscription.target_person_id == person.id
+    ).first()
+    
+    if is_tracked:
+        if not existing_sub:
+            db_sub = Subscription(user_id="default", target_person_id=person.id)
+            db.add(db_sub)
+    else:
+        if existing_sub:
+            db.delete(existing_sub)
+            
     db.commit()
     db.refresh(person)
     return {"id": person.id, "is_tracked": person.is_tracked}

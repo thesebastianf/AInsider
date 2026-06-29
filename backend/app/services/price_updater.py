@@ -30,10 +30,9 @@ from app.database import SessionLocal
 logger = logging.getLogger("ainsider.price_updater")
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-_CHUNK_SIZE = 200          # tickers per yf.download call
-_INTER_CHUNK_SLEEP = 20    # seconds between chunks (respectful rate)
-_PAUSE_HOURS = 1           # pause duration on circuit-breaker trip
-_MAX_CHUNK_FAILURES = 2    # consecutive empty-chunk failures before pause
+_CHUNK_SIZE = 50           # Smaller chunk size to avoid Yahoo Finance IP blocking
+_INTER_CHUNK_SLEEP = 35    # Longer sleep to respect rate limits
+_PAUSE_HOURS = 2           # pause duration on circuit-breaker trip
 
 # ── Circuit-breaker state (in-process, resets on container restart) ────────────
 _state_lock = threading.Lock()
@@ -233,38 +232,20 @@ def update_all_prices() -> None:
                 close_df = _download_chunk(chunk, session)
             except RuntimeError as e:
                 if "YAHOO_429" in str(e):
-                    with _state_lock:
-                        _consecutive_chunk_failures += 1
-                        failures = _consecutive_chunk_failures
-                    logger.warning(
-                        f"429 on chunk {chunk_idx + 1} "
-                        f"(consecutive failures: {failures})"
-                    )
-                    if failures >= _MAX_CHUNK_FAILURES:
-                        _trip_circuit_breaker(db)
-                        break
-                    # One failure: sleep longer and retry
-                    logger.info(f"Sleeping 60s before next chunk...")
-                    time.sleep(60)
-                    continue
+                    logger.warning(f"Yahoo Finance 429 encountered during chunk {chunk_idx + 1}. Tripping circuit breaker immediately.")
+                    _trip_circuit_breaker(db)
+                    break
                 else:
                     logger.error(f"Chunk {chunk_idx + 1} error: {e}")
                     continue
 
             # Empty result = likely rate limited or all tickers invalid
             if close_df.empty:
-                with _state_lock:
-                    _consecutive_chunk_failures += 1
-                    failures = _consecutive_chunk_failures
                 logger.warning(
-                    f"Empty result for chunk {chunk_idx + 1} "
-                    f"(consecutive failures: {failures})"
+                    f"Empty result for chunk {chunk_idx + 1}. Tripping circuit breaker immediately to prevent block."
                 )
-                if failures >= _MAX_CHUNK_FAILURES:
-                    _trip_circuit_breaker(db)
-                    break
-                time.sleep(60)
-                continue
+                _trip_circuit_breaker(db)
+                break
 
             # Successful chunk → reset failure counter
             with _state_lock:
