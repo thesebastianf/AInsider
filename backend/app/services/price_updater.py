@@ -124,6 +124,7 @@ def _download_chunk(tickers: list[str], session: requests.Session) -> pd.DataFra
             period="5y",
             progress=False,
             auto_adjust=False,
+            threads=False,
             session=session,
         )
         if data.empty:
