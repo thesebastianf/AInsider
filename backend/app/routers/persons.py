@@ -182,6 +182,8 @@ def get_available_persons(
     search: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     sort_by: Optional[str] = Query('name', description="Sort by: name, trade_count, recent_trade"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db)
 ):
     """Get target persons that are NOT currently tracked (available to be tracked)."""
@@ -200,7 +202,7 @@ def get_available_persons(
     else:
         query = query.order_by(TargetPerson.name)
 
-    persons = query.limit(100).all()
+    persons = query.offset(offset).limit(limit).all()
     
     return PersonList(
         persons=[_build_person_response(p, db) for p in persons],

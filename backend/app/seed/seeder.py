@@ -74,47 +74,48 @@ def seed_database(db: Session) -> bool:
         ("social_inverse_cramer", "Inverse Cramer Tracker (Social)"),
     ]
     for p_type, name in default_sources:
+        # Pre-populate configurations
+        default_cfg = {}
+        if p_type == "sec13f":
+            default_cfg = {
+                "cik_list": "2045724,1067983,0001649339,0001336528,0001029160,0001037389,0001350694,0000921669,0001423053,0001568820",
+                "_notes": (
+                    "CIKs: 2045724=Situational Awareness LP (Aschenbrenner), "
+                    "1067983=Berkshire Hathaway (Buffett), "
+                    "0001649339=Scion Asset Management (Burry), "
+                    "0001336528=Pershing Square (Ackman), "
+                    "0001029160=Duquesne Family Office (Druckenmiller), "
+                    "0001037389=Renaissance Technologies (Simons), "
+                    "0001350694=Bridgewater Associates (Dalio), "
+                    "0000921669=Icahn Associates, "
+                    "0001423053=Tudor Investment Corp (Jones), "
+                    "0001568820=Point72 Asset Management (Cohen). "
+                    "Add more CIKs comma-separated. Find CIKs at data.sec.gov/submissions/CIK######.json"
+                )
+            }
+        elif p_type == "sec13d":
+            default_cfg = {
+                "cik_list": "0000921669,0001336528,0000902219,0001166559",
+                "_notes": "Carl Icahn (921669), Pershing Square (1336528), Elliott Management (902219), JANA Partners (1166559)"
+            }
+        elif p_type == "quiver":
+            default_cfg = {
+                "api_key": "",
+                "last_status": "error",
+                "last_error": "Please provide API Key"
+            }
+        elif p_type == "finnhub":
+            default_cfg = {
+                "api_key": "",
+                "ticker_list": "AAPL,TSLA,MSFT",
+                "_notes": "Finnhub requires specific symbols. Add more symbols comma-separated.",
+                "last_status": "error",
+                "last_error": "Please provide Finnhub API Key"
+            }
+
         existing = db.query(DataSourceConfig).filter(DataSourceConfig.provider_type == p_type).first()
         if not existing:
             logger.info(f"Seeding default Data Source: {name}")
-            # Pre-populate sec13f with known fund CIKs
-            default_cfg = {}
-            if p_type == "sec13f":
-                default_cfg = {
-                    "cik_list": "2045724,1067983,0001649339,0001336528,0001029160,0001037389,0001350694,0000921669,0001423053,0001568820",
-                    "_notes": (
-                        "CIKs: 2045724=Situational Awareness LP (Aschenbrenner), "
-                        "1067983=Berkshire Hathaway (Buffett), "
-                        "0001649339=Scion Asset Management (Burry), "
-                        "0001336528=Pershing Square (Ackman), "
-                        "0001029160=Duquesne Family Office (Druckenmiller), "
-                        "0001037389=Renaissance Technologies (Simons), "
-                        "0001350694=Bridgewater Associates (Dalio), "
-                        "0000921669=Icahn Associates, "
-                        "0001423053=Tudor Investment Corp (Jones), "
-                        "0001568820=Point72 Asset Management (Cohen). "
-                        "Add more CIKs comma-separated. Find CIKs at data.sec.gov/submissions/CIK######.json"
-                    )
-                }
-            elif p_type == "sec13d":
-                default_cfg = {
-                    "cik_list": "0000921669,0001336528,0000902219,0001166559",
-                    "_notes": "Carl Icahn (921669), Pershing Square (1336528), Elliott Management (902219), JANA Partners (1166559)"
-                }
-            elif p_type == "quiver":
-                default_cfg = {
-                    "api_key": "",
-                    "last_status": "error",
-                    "last_error": "Please provide API Key"
-                }
-            elif p_type == "finnhub":
-                default_cfg = {
-                    "api_key": "",
-                    "ticker_list": "AAPL,TSLA,MSFT",
-                    "_notes": "Finnhub requires specific symbols. Add more symbols comma-separated.",
-                    "last_status": "error",
-                    "last_error": "Please provide Finnhub API Key"
-                }
             ds_config = DataSourceConfig(
                 provider_type=p_type, name=name,
                 config_json=default_cfg, is_enabled=(p_type not in ["quiver", "finnhub"])
