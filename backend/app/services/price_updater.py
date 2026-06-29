@@ -91,13 +91,97 @@ def update_ticker_price(ticker: str, db: Session) -> None:
         db.rollback()
 
 
+
 def update_all_prices() -> None:
-    """Update prices for all tickers in the database."""
+    """Update prices for all tickers associated with tracked/followed persons in batch."""
     db = SessionLocal()
     try:
-        # Get unique tickers from trades
-        tickers = [row[0] for row in db.query(Trade.ticker).distinct().all()]
-        logger.info(f"Updating prices for {len(tickers)} tickers")
+        from app.models import TargetPerson, Trade
+        import yfinance as yf
+        import pandas as pd
+        from datetime import date
+        
+        # Get unique tickers from trades belonging to tracked or followed persons
+        tickers = [
+            row[0] for row in db.query(Trade.ticker)
+            .join(TargetPerson, Trade.target_person_id == TargetPerson.id)
+            .filter((TargetPerson.is_tracked == True) | (TargetPerson.is_followed == True))
+            .distinct().all()
+        ]
+        
+        if not tickers:
+            logger.info("No active tracked/followed tickers to update.")
+            return
+
+        logger.info(f"Batch updating prices for {len(tickers)} active tickers")
+
+        # Fetch history from start of year to today for YTD calculation
+        year_start = date(date.today().year, 1, 1)
+        
+        chunk_size = 50
+        for i in range(0, len(tickers), chunk_size):
+            chunk = tickers[i:i + chunk_size]
+            if not chunk: continue
+            
+            try:
+                data = yf.download(chunk, start=year_start.isoformat(), end=date.today().isoformat(), progress=False, auto_adjust=False)
+                if data.empty or 'Close' not in data:
+                    continue
+                    
+                close_data = data['Close']
+                
+                for ticker in chunk:
+                    try:
+                        if len(chunk) == 1:
+                            s = close_data.dropna()
+                        else:
+                            if ticker not in close_data: continue
+                            s = close_data[ticker].dropna()
+                            
+                        if s.empty: continue
+                        
+                        current_price = float(s.iloc[-1])
+                        start_price = float(s.iloc[0])
+                        
+                        ytd_pct = None
+                        if start_price > 0:
+                            ytd_pct = round(((current_price - start_price) / start_price) * 100, 2)
+                            
+                        # Upsert into asset_performance
+                        asset = db.query(AssetPerformance).filter(AssetPerformance.ticker == ticker).first()
+                        if asset:
+                            asset.current_price = round(current_price, 2)
+                            asset.ytd_performance_pct = ytd_pct
+                            asset.last_updated = datetime.now()
+                        else:
+                            asset = AssetPerformance(
+                                ticker=ticker,
+                                current_price=round(current_price, 2),
+                                ytd_performance_pct=ytd_pct,
+                                last_updated=datetime.now(),
+                            )
+                            db.add(asset)
+                            
+                        logger.info(f"Updated {ticker}: ${current_price:.2f}, YTD: {ytd_pct}%")
+                    except Exception as e:
+                        logger.error(f"Failed processing {ticker} in batch: {e}")
+                        
+            except Exception as e:
+                logger.error(f"Failed fetching batch chunk: {e}")
+
+        db.commit()
+        logger.info("Price update complete")
+        try:
+            from app.routers.settings import _runtime_overrides
+            _runtime_overrides["last_price_update"] = datetime.now()
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error(f"Price update batch failed: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
 
         for ticker in tickers:
             update_ticker_price(ticker, db)

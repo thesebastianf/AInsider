@@ -244,10 +244,14 @@ DATASOURCE_PROVIDER_FIELDS = {
     "senate": {},
     "quiver": {"api_key": "Quiver API Key"},
     "sec13f": {},
+    "sec13d": {},
+    "sec_form4": {},
+    "finnhub": {"api_key": "Finnhub API Key"},
+    "directors_dealings": {},
 }
 
 class DataSourceConfigCreate(BaseModel):
-    provider_type: str = Field(description="house, senate, quiver, sec13f")
+    provider_type: str = Field(description="house, senate, quiver, sec13f, sec13d, sec_form4, finnhub, directors_dealings")
     name: str
     config_json: Dict[str, Any]
 

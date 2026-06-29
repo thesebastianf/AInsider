@@ -64,9 +64,11 @@ def seed_database(db: Session) -> bool:
     default_sources = [
         ("house", "House Stock Watcher"),
         ("senate", "Senate Stock Watcher"),
-        ("quiver", "Quiver Quantitative (Requires API Key)"),
-        ("sec13f", "SEC 13F (Fund Managers)"),
-        ("sec_form4", "SEC Form 4 (Corporate Insiders)"),
+        ("quiver", "Quiver Quantitative"),
+        ("sec13f", "SEC 13F (Superinvestors)"),
+        ("sec13d", "SEC 13D (Activist Investors)"),
+        ("sec_form4", "SEC Form 4 (SEC EDGAR - Free)"),
+        ("finnhub", "Finnhub Form 4 (Requires API Key)"),
         ("directors_dealings", "Directors' Dealings (DAX / Europe)"),
     ]
     for p_type, name in default_sources:
@@ -84,15 +86,28 @@ def seed_database(db: Session) -> bool:
                         "Add more CIKs comma-separated. Find CIKs at data.sec.gov/submissions/CIK######.json"
                     )
                 }
+            elif p_type == "sec13d":
+                default_cfg = {
+                    "cik_list": "0000921669,0001336528,0000902219",
+                    "_notes": "Carl Icahn (921669), Pershing Square (1336528), Elliott (902219)"
+                }
             elif p_type == "quiver":
                 default_cfg = {
                     "api_key": "",
                     "last_status": "error",
                     "last_error": "Please provide API Key"
                 }
+            elif p_type == "finnhub":
+                default_cfg = {
+                    "api_key": "",
+                    "ticker_list": "AAPL,TSLA,MSFT",
+                    "_notes": "Finnhub requires specific symbols. Add more symbols comma-separated.",
+                    "last_status": "error",
+                    "last_error": "Please provide Finnhub API Key"
+                }
             ds_config = DataSourceConfig(
                 provider_type=p_type, name=name,
-                config_json=default_cfg, is_enabled=(p_type != "quiver")
+                config_json=default_cfg, is_enabled=(p_type not in ["quiver", "finnhub"])
             )
             db.add(ds_config)
             seeded = True

@@ -45,51 +45,24 @@ def _get_or_create_person(db: Session, raw: RawTrade) -> TargetPerson:
 _price_cache: dict = {}
 
 
-def _get_historical_price(ticker: str, trade_date, *, _delay: float = 2.0, _retries: int = 3) -> float | None:
-    """Fetch the close price of a ticker on a specific trade date.
-    
-    Results are cached as a full 5-year DataFrame per ticker within the pipeline 
-    run to avoid duplicate yfinance calls and rate limits. 
-    """
-    import yfinance as yf
+
+def _get_historical_price(ticker: str, trade_date) -> float | None:
+    """Fetch the close price of a ticker on a specific trade date from the pre-populated cache."""
     import pandas as pd
-    import time
-    from datetime import datetime, timedelta
-
-    if ticker not in _price_cache:
-        for attempt in range(_retries):
-            try:
-                time.sleep(_delay)  # Delay between unique tickers
-                stock = yf.Ticker(ticker)
-                hist = stock.history(period="5y")
-                if not hist.empty:
-                    # Remove timezone info for easier matching
-                    hist.index = hist.index.tz_localize(None).normalize()
-                    _price_cache[ticker] = hist
-                    break
-                else:
-                    _price_cache[ticker] = None
-                    break
-            except Exception as e:
-                err_str = str(e)
-                if "Too Many Requests" in err_str or "Rate limited" in err_str:
-                    wait = _delay * (3 ** attempt)
-                    logger.warning(
-                        f"Rate limited fetching history for {ticker} "
-                        f"(attempt {attempt + 1}/{_retries}), waiting {wait:.0f}s..."
-                    )
-                    time.sleep(wait)
-                else:
-                    logger.warning(f"Failed to fetch history for {ticker}: {e}")
-                    _price_cache[ticker] = None
-                    break
-        else:
-            logger.warning(f"Gave up fetching history for {ticker} after {_retries} retries")
-            _price_cache[ticker] = None
-
+    
     hist = _price_cache.get(ticker)
     if hist is None or hist.empty:
         return None
+
+    # Try to find the exact date, or the next available trading day within 7 days
+    target_date = pd.Timestamp(trade_date)
+    for i in range(7):
+        check_date = target_date + pd.Timedelta(days=i)
+        if check_date in hist.index:
+            return float(hist.loc[check_date])
+            
+    return None
+
 
     # Try to find the exact date, or the next available trading day within 7 days
     target_date = pd.Timestamp(trade_date)
@@ -193,10 +166,49 @@ def run_pipeline() -> dict:
         global _price_cache
         _price_cache = {}  # Reset cache each pipeline run
 
-        unique_tickers = set(raw.ticker for raw in raw_trades)
+
+        unique_tickers = list(set(raw.ticker for raw in raw_trades if raw.ticker))
         
         add_log("INFO", f"Will resolve historical prices for {len(unique_tickers)} unique tickers...")
 
+        # ─── BATCH DOWNLOAD HISTORICAL PRICES ────────────────────────
+        # Instead of 1300 separate requests with delays, batch them!
+        import yfinance as yf
+        import pandas as pd
+        import time
+        
+        chunk_size = 50
+        for i in range(0, len(unique_tickers), chunk_size):
+            chunk = unique_tickers[i:i + chunk_size]
+            if not chunk: continue
+            
+            try:
+                # yfinance download handles multiple tickers incredibly fast in one request
+                data = yf.download(chunk, period="5y", auto_adjust=False, progress=False)
+                if data.empty:
+                    continue
+                    
+                if 'Close' in data:
+                    close_data = data['Close']
+                    # Normalize index to avoid tz issues
+                    close_data.index = close_data.index.tz_localize(None).normalize()
+                    
+                    if len(chunk) == 1:
+                        # If only one ticker, close_data is a Series
+                        _price_cache[chunk[0]] = close_data
+                    else:
+                        # MultiIndex DataFrame, extract each column (ticker) as a Series
+                        for t in chunk:
+                            if t in close_data:
+                                s = close_data[t].dropna()
+                                if not s.empty:
+                                    _price_cache[t] = s
+            except Exception as e:
+                logger.warning(f"Batch price download failed for chunk {i}: {e}")
+            
+            # Tiny delay between batches to be safe
+            time.sleep(1.0)
+            
         # ─── Pass 1: Fast Discovery ──────────────────────────────────
         # Create all TargetPersons instantly so the 'Discover' tab populates
         # immediately, before the 50+ minute yfinance rate-limited loop begins.

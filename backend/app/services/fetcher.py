@@ -8,6 +8,7 @@ from datetime import date, datetime
 from typing import List, Optional
 from dataclasses import dataclass
 import httpx
+import re
 from sqlalchemy.orm import Session
 from abc import ABC, abstractmethod
 
@@ -324,6 +325,7 @@ class SEC13FProvider(BaseDataSourceProvider):
             
             # SEC 13F XML namespace (varies by year)
             ns_candidates = [
+                "{http://www.sec.gov/edgar/document/thirteenf/informationtable}",
                 "{http://www.sec.gov/edgar/document/thirteenf/informationTable}",
                 "",
             ]
@@ -366,12 +368,21 @@ class SEC13FProvider(BaseDataSourceProvider):
                     if len(ticker) > 10 or not ticker:
                         continue
                     
-                    shares_raw = get_text(entry, "sshPrnamt") or get_text(entry, "shrsOrPrnAmt")
-                    value_raw = get_text(entry, "value")  # In thousands USD
+                    shares_raw = get_text(entry, "sshPrnamt")
+                    if not shares_raw:
+                        # Sometimes it's nested inside shrsOrPrnAmt
+                        for ns in ns_candidates:
+                            container = entry.find(f"{ns}shrsOrPrnAmt")
+                            if container is not None:
+                                node = container.find(f"{ns}sshPrnamt")
+                                if node is not None and node.text:
+                                    shares_raw = node.text.strip()
+                                    break
+                    
+                    value_raw = get_text(entry, "value")
                     
                     shares = int(float(shares_raw)) if shares_raw else 0
-                    value_k = int(float(value_raw)) if value_raw else 0
-                    value_usd = value_k * 1000
+                    value_usd = int(float(value_raw)) if value_raw else 0
                     
                     if value_usd >= 1_000_000:
                         amount_range = f"${value_usd / 1_000_000:.1f}M ({shares:,} sh)"
@@ -427,6 +438,164 @@ class SEC13FProvider(BaseDataSourceProvider):
         return all_trades
 
 
+class SEC13DProvider(BaseDataSourceProvider):
+    """Fetches SEC 13D/13G (Activist Investor) filings for configured CIKs."""
+    
+    def _get_recent_submissions(self, cik_key: str) -> dict:
+        url = f"https://data.sec.gov/submissions/{cik_key}.json"
+        headers = {"User-Agent": "AInsiderTrackerAdmin admin@ainsidertracker.com"}
+        try:
+            resp = httpx.get(url, headers=headers, timeout=10.0)
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception as e:
+            logger.error(f"SEC13D: Error fetching submissions for {cik_key}: {e}")
+        return {}
+
+    def fetch_trades(self, limit: int = 50) -> List[RawTrade]:
+        cfg = self.config.config_json or {}
+        cik_list_raw = cfg.get("cik_list", "")
+        if not cik_list_raw:
+            logger.warning("SEC13D: No CIKs configured. Using defaults (Icahn, Pershing Square).")
+            cik_list_raw = "0000921669,0001336528"
+            
+        cik_list = [c.strip().zfill(10) for c in cik_list_raw.split(",") if c.strip()]
+        trades = []
+        
+        from datetime import date
+        for cik in cik_list:
+            cik_key = f"CIK{cik}"
+            data = self._get_recent_submissions(cik_key)
+            if not data:
+                continue
+                
+            entity_name = data.get("name", f"Activist CIK {cik}")
+            filings = data.get("filings", {}).get("recent", {})
+            if not filings:
+                continue
+                
+            # Parse the recent filings arrays
+            forms = filings.get("form", [])
+            dates = filings.get("filingDate", [])
+            acc_nums = filings.get("accessionNumber", [])
+            docs = filings.get("primaryDocument", [])
+            
+            for i in range(len(forms)):
+                if forms[i] in ("SC 13D", "SC 13G", "SC 13D/A", "SC 13G/A"):
+                    # We found an activist filing!
+                    acc_num = str(acc_nums[i]).replace("-", "")
+                    doc = docs[i]
+                    url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_num}/{doc}"
+                    
+                    try:
+                        td = date.fromisoformat(dates[i])
+                    except:
+                        td = date.today()
+                        
+                    # Since SEC 13D submissions json doesn't list the target ticker,
+                    # we use a generic placeholder or attempt to extract it if we had a full parser.
+                    # For now, we will record the ticker as the activist's own entity name or "ACTIVIST".
+                    # A true implementation would parse the SGML header of the filing for the subject company CUSIP.
+                    ticker = "ACTV"
+                    
+                    trade = RawTrade(
+                        person_name=entity_name,
+                        person_category="Activist Investor",
+                        committees=[],
+                        ticker=ticker,
+                        trade_type="BUY", # 13D is always an acquisition of >5%
+                        amount_range=">5% Ownership",
+                        trade_date=td,
+                        filing_date=td,
+                        source_url=url,
+                    )
+                    trades.append(trade)
+                    if len(trades) >= limit:
+                        return trades
+        return trades
+
+
+class FinnhubForm4Provider(BaseDataSourceProvider):
+    """Fetches real insider trades from SEC EDGAR Form 4 filings via Finnhub."""
+    
+    URL = "https://finnhub.io/api/v1/stock/insider-transactions"
+
+    def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
+        cfg = self.config.config_json or {}
+        api_key = cfg.get("api_key", "").strip()
+        if not api_key:
+            logger.warning("Finnhub API Key is missing for SEC Form 4")
+            return []
+            
+        ticker_list_raw = cfg.get("ticker_list", "AAPL,TSLA,MSFT")
+        symbols = [s.strip().upper() for s in ticker_list_raw.split(",") if s.strip()]
+        
+        trades = []
+        from datetime import date
+        
+        for symbol in symbols:
+            try:
+                resp = httpx.get(
+                    f"{self.URL}?symbol={symbol}&token={api_key}",
+                    timeout=10.0
+                )
+                if resp.status_code == 429:
+                    logger.warning("Finnhub API rate limit exceeded")
+                    break
+                resp.raise_for_status()
+                data = resp.json().get("data", [])
+                
+                for item in data[:limit]:
+                    try:
+                        code = item.get("transactionCode", "")
+                        if code == "P":
+                            trade_type = "BUY"
+                        elif code == "S":
+                            trade_type = "SELL"
+                        else:
+                            continue
+                            
+                        shares = item.get("share", 0)
+                        if shares == 0:
+                            continue
+                        price = item.get("transactionPrice", 0)
+                        val = shares * price
+                        
+                        if val > 0:
+                            if val > 1_000_000:
+                                amount_range = f"${val/1_000_000:.1f}M"
+                            else:
+                                amount_range = f"${val:,.0f}"
+                        else:
+                            amount_range = f"{shares:,} shares"
+                            
+                        td = date.fromisoformat(item.get("transactionDate", date.today().isoformat()))
+                        
+                        trade = RawTrade(
+                            person_name=item.get("name", "Unknown Insider"),
+                            person_category="Corporate Insider",
+                            committees=[],
+                            ticker=symbol,
+                            trade_type=trade_type,
+                            amount_range=amount_range,
+                            trade_date=td,
+                            filing_date=date.fromisoformat(item.get("filingDate", td.isoformat())),
+                            source_url=f"https://finnhub.io/",
+                        )
+                        trades.append(trade)
+                    except Exception as e:
+                        logger.debug(f"SECForm4 (Finnhub): Skipping malformed trade: {e}")
+                
+                import time
+                time.sleep(1.01)  # Guard against Finnhub rate limits
+            except Exception as e:
+
+                logger.error(f"SECForm4 (Finnhub): Error fetching {symbol}: {e}")
+                
+        return trades
+
+
+
 class SECForm4Provider(BaseDataSourceProvider):
     """Fetches real insider trades from SEC EDGAR Form 4 filings."""
     
@@ -478,96 +647,65 @@ class SECForm4Provider(BaseDataSourceProvider):
                         
                     xml_url = "https://www.sec.gov" + valid_xmls[0]
                     
-                    # 2. Fetch the XML document
+                    # 2. Fetch the actual Form 4 XML
                     xml_resp = httpx.get(xml_url, headers=headers, timeout=10.0)
                     if xml_resp.status_code != 200:
                         continue
                         
                     xml_root = ET.fromstring(xml_resp.content)
+                    from datetime import date
                     
-                    # Parse Owner and Company from XML directly
-                    owner_elem = xml_root.find(".//reportingOwner/reportingOwnerId/rptOwnerName")
-                    owner_name = owner_elem.text.strip() if (owner_elem is not None and owner_elem.text) else "Unknown Insider"
+                    # Target company details
+                    issuer = xml_root.find("issuer")
+                    if issuer is None: continue
+                    ticker = getattr(issuer.find("issuerTradingSymbol"), "text", None)
+                    if not ticker: continue
                     
-                    company_elem = xml_root.find(".//issuer/issuerName")
-                    company_name = company_elem.text.strip() if (company_elem is not None and company_elem.text) else "Unknown Company"
+                    # Reporting person
+                    owner = xml_root.find("reportingOwner")
+                    if owner is None: continue
+                    owner_id = owner.find("reportingOwnerId")
+                    person_name = getattr(owner_id.find("rptOwnerName"), "text", "Unknown") if owner_id is not None else "Unknown"
                     
-                    # 3. Parse Ticker Symbol
-                    ticker_elem = xml_root.find(".//issuer/issuerTradingSymbol")
-                    if ticker_elem is None or not ticker_elem.text:
-                        continue
-                    ticker = ticker_elem.text.strip().upper()
+                    # Non-derivative transactions
+                    non_deriv = xml_root.find("nonDerivativeTable")
+                    if non_deriv is None: continue
                     
-                    # 4. Parse Corporate Title
-                    title_elem = xml_root.find(".//reportingOwner/reportingOwnerRelationship/officerTitle")
-                    corporate_title = title_elem.text.strip() if (title_elem is not None and title_elem.text) else "Insider"
-                    
-                    # 5. Parse first transaction (non-derivative)
-                    trans = xml_root.find(".//nonDerivativeTable/nonDerivativeTransaction")
-                    if trans is None:
-                        continue
+                    for tx in non_deriv.findall("nonDerivativeTransaction"):
+                        tx_date = getattr(tx.find("transactionDate/value"), "text", None)
+                        tx_code = getattr(tx.find("transactionCoding/transactionCode"), "text", None)
                         
-                    t_date_elem = trans.find(".//transactionDate/value")
-                    t_code_elem = trans.find(".//transactionCoding/transactionCode")
-                    t_shares_elem = trans.find(".//transactionAmounts/transactionShares/value")
-                    t_price_elem = trans.find(".//transactionAmounts/transactionPricePerShare/value")
-                    t_code_ad_elem = trans.find(".//transactionAmounts/transactionAcquiredDisposedCode/value")
-                    
-                    if t_date_elem is None or not t_date_elem.text:
-                        continue
+                        shares = float(getattr(tx.find("transactionAmounts/transactionShares/value"), "text", 0))
+                        pps = float(getattr(tx.find("transactionAmounts/transactionPricePerShare/value"), "text", 0))
                         
-                    # Date formatting (YYYY-MM-DD)
-                    parts = t_date_elem.text.split("-")
-                    if len(parts) == 3:
-                        td = date(int(parts[0]), int(parts[1]), int(parts[2]))
-                    else:
-                        continue
+                        if tx_code == "P":
+                            t_type = "BUY"
+                        elif tx_code == "S":
+                            t_type = "SELL"
+                        else:
+                            continue
+                            
+                        amount = shares * pps
                         
-                    # Determine BUY / SELL
-                    code = t_code_elem.text if (t_code_elem is not None and t_code_elem.text) else ""
-                    code_ad = t_code_ad_elem.text if (t_code_ad_elem is not None and t_code_ad_elem.text) else ""
-                    
-                    if code == "P" or code_ad == "A":
-                        trade_type = "BUY"
-                    elif code == "S" or code_ad == "D":
-                        trade_type = "SELL"
-                    else:
-                        continue
-                        
-                    shares = float(t_shares_elem.text) if (t_shares_elem is not None and t_shares_elem.text) else 0.0
-                    price = float(t_price_elem.text) if (t_price_elem is not None and t_price_elem.text) else 0.0
-                    
-                    value = shares * price
-                    if value == 0:
-                        amount_range = f"{int(shares):,} shares"
-                    else:
-                        amount_range = f"${value:,.2f} ({int(shares):,} sh @ ${price:,.2f})"
-                        
-                    trade = RawTrade(
-                        person_name=owner_name,
-                        person_category="Corporate Insider",
-                        committees=[],
-                        ticker=ticker,
-                        trade_type=trade_type,
-                        amount_range=amount_range[:50],
-                        trade_date=td,
-                        filing_date=date.today(),
-                        source_url=xml_url,
-                    )
-                    trades.append(trade)
-                    logger.info(f"Form 4 parsed: {owner_name} ({corporate_title} @ {company_name}) {trade_type} {ticker}")
+                        trade = RawTrade(
+                            person_name=person_name,
+                            person_category="Corporate Insider",
+                            committees=[],
+                            ticker=ticker.upper(),
+                            trade_type=t_type,
+                            amount_range=f"${amount:,.0f}",
+                            trade_date=date.fromisoformat(tx_date[:10]) if tx_date else date.today(),
+                            filing_date=date.today(),
+                            source_url=index_url
+                        )
+                        trades.append(trade)
                 except Exception as e:
-                    logger.warning(f"SECForm4Provider: Skipping entry: {e}")
-                    continue
+                    logger.debug(f"SECForm4: Skipping individual Form4 parse: {e}")
+                    
         except Exception as e:
-            logger.error(f"SECForm4Provider: Failed to parse feed: {e}")
-            try:
-                from app.routers.system import add_log
-                add_log("ERROR", f"SECForm4Provider fetch failed: {str(e)[:150]}")
-            except Exception:
-                pass
+            logger.error(f"SECForm4: Master feed parsing failed: {e}")
+            
         return trades
-
 
 class DirectorsDealingsProvider(BaseDataSourceProvider):
     """Fetches and parses real European Directors' Dealings news from Wallstreet Online RSS feed."""
@@ -609,14 +747,19 @@ class DirectorsDealingsProvider(BaseDataSourceProvider):
                     rest = ":".join(parts[2:]).strip()
                     
                     if "," in rest:
-                        manager_name, trans_type_raw = rest.rsplit(",", 1)
-                        manager_name = manager_name.strip()
-                        trans_type_raw = trans_type_raw.strip().upper()
+                        # Extract the name before the first comma to avoid long sentences
+                        manager_name = rest.split(",")[0].strip()
                     else:
-                        manager_name = rest
-                        trans_type_raw = "BUY"
+                        manager_name = rest.strip()
                         
-                    if "VERKAUF" in trans_type_raw or "SELL" in trans_type_raw:
+                    # Clean up known transaction words if they ended up in the name
+                    for word in [" Kauf", " Verkauf", " Erwerb", " Veräußerung", " Buy", " Sell", 
+                                 " kauf", " verkauf", " erwerb"]:
+                        if manager_name.endswith(word):
+                            manager_name = manager_name[:-len(word)].strip()
+                            
+                    rest_upper = rest.upper()
+                    if "VERKAUF" in rest_upper or "SELL" in rest_upper or "VERÄUSSERUNG" in rest_upper:
                         trade_type = "SELL"
                     else:
                         trade_type = "BUY"
@@ -694,7 +837,9 @@ PROVIDER_CLASSES = {
     "senate": SenateStockWatcherProvider,
     "quiver": QuiverQuantProvider,
     "sec13f": SEC13FProvider,
+    "sec13d": SEC13DProvider,
     "sec_form4": SECForm4Provider,
+    "finnhub": FinnhubForm4Provider,
     "directors_dealings": DirectorsDealingsProvider,
 }
 
