@@ -1,9 +1,10 @@
-import { Bell, Sun, Moon } from 'lucide-react';
+import { Bell, Sun, Moon, RefreshCw } from 'lucide-react';
 import AppLogo from './AppLogo';
 import { useState, useEffect } from 'react';
 
 export default function Layout({ children, activeTab, bottomNav }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('ainsider-theme') || 'dark');
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     const isDark = theme === 'dark';
@@ -11,6 +12,21 @@ export default function Layout({ children, activeTab, bottomNav }) {
     document.documentElement.classList.toggle('light-theme', !isDark);
     localStorage.setItem('ainsider-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch('/api/system/stats');
+        const data = await res.json();
+        setIsSyncing(data.is_pipeline_running);
+      } catch (e) {
+        // ignore
+      }
+    };
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const toggleTheme = () => {
     setTheme(t => (t === 'dark' ? 'light' : 'dark'));
@@ -40,7 +56,15 @@ export default function Layout({ children, activeTab, bottomNav }) {
             <span className="text-[9px] text-slate-400 uppercase tracking-[0.2em] mt-0.5">Global Tracker</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {/* Sync Indicator */}
+          {isSyncing && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400">
+              <RefreshCw size={12} className="animate-spin" />
+              <span className="text-[10px] font-bold tracking-wide uppercase">Syncing</span>
+            </div>
+          )}
+          
           {/* Theme Toggler */}
           <button 
             onClick={toggleTheme}

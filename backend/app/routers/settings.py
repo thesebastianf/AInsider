@@ -45,6 +45,7 @@ def get_settings(db: Session = Depends(get_db)):
             "price_update_interval_minutes", settings.PRICE_UPDATE_INTERVAL_MINUTES
         ),
         last_pipeline_run=_runtime_overrides.get("last_pipeline_run"),
+        is_pipeline_running=__import__("app.state", fromlist=["app_state"]).app_state.get("is_pipeline_running", False),
         llm_providers=[
             LLMConfigOut(
                 id=c.id, provider_type=c.provider_type, name=c.name,

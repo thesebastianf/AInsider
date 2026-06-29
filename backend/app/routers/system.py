@@ -89,6 +89,7 @@ def get_system_stats(db: Session = Depends(get_db)):
         total_tickers=total_tickers,
         uptime_seconds=uptime_seconds,
         last_pipeline_run=last_run,
+        is_pipeline_running=__import__("app.state", fromlist=["app_state"]).app_state.get("is_pipeline_running", False),
         next_pipeline_run=next_pipeline,
         last_price_update=last_price,
         next_price_update=next_price_update,

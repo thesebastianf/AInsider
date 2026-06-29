@@ -195,6 +195,7 @@ class AppSettingsOut(BaseModel):
     scheduler_interval_minutes: int
     price_update_interval_minutes: int
     last_pipeline_run: Optional[datetime] = None
+    is_pipeline_running: bool = False
     notification_providers: List[NotificationConfigOut] = []
     data_source_providers: List['DataSourceConfigOut'] = []
 
@@ -215,6 +216,7 @@ class SystemStats(BaseModel):
     total_tickers: int = 0
     uptime_seconds: float = 0
     last_pipeline_run: Optional[datetime] = None
+    is_pipeline_running: bool = False
     next_pipeline_run: Optional[datetime] = None
     last_price_update: Optional[datetime] = None
     next_price_update: Optional[datetime] = None

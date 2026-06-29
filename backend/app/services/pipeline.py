@@ -160,6 +160,7 @@ def run_pipeline() -> dict:
     """Execute the complete data pipeline."""
     from app.routers.system import add_log
     from app.routers.settings import _runtime_overrides
+    import app.state
 
     stats = {
         "fetched": 0, "new_trades": 0, "duplicates": 0,
@@ -171,6 +172,7 @@ def run_pipeline() -> dict:
     logger.info("Pipeline run started")
 
     db = SessionLocal()
+    app.state.app_state["is_pipeline_running"] = True
     try:
         # Run daily activity cleanup
         try:
@@ -194,17 +196,23 @@ def run_pipeline() -> dict:
         unique_tickers = set(raw.ticker for raw in raw_trades)
         
         add_log("INFO", f"Will resolve historical prices for {len(unique_tickers)} unique tickers...")
-        
-        # We don't pre-fetch here anymore, we let _insert_trade call _get_historical_price
-        # which now safely fetches and caches the 5-year history DataFrame on first miss.
 
+        # ─── Pass 1: Fast Discovery ──────────────────────────────────
+        # Create all TargetPersons instantly so the 'Discover' tab populates
+        # immediately, before the 50+ minute yfinance rate-limited loop begins.
+        for raw in raw_trades:
+            _get_or_create_person(db, raw)
+        db.commit()
+        
+        # ─── Pass 2: Trade Ingestion & Rate-Limited Lookups ──────────
         updated_tickers = set()
 
         for raw in raw_trades:
             try:
-                # Step 2: Get or create person
-                person = _get_or_create_person(db, raw)
-                db.commit()
+                # Get the person (already created in Pass 1)
+                person = db.query(TargetPerson).filter(TargetPerson.name == raw.person_name).first()
+                if not person:
+                    continue
 
                 # Step 3: Insert trade (deduplication)
                 # First check if we need to fetch price
@@ -307,6 +315,7 @@ def run_pipeline() -> dict:
         add_log("ERROR", f"Pipeline fatal error: {str(e)[:100]}")
         stats["errors"] += 1
     finally:
+        app.state.app_state["is_pipeline_running"] = False
         db.close()
 
     return stats
