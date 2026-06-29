@@ -1,13 +1,27 @@
 """
 AInsider Tracker – Stock Price Updater
-Fetches current stock prices and YTD performance using yfinance.
+
+API Call Strategy (minimized):
+  - Uses yf.download() in chunks of up to 200 tickers per HTTP call
+  - For 1500 symbols: ~8 HTTP calls total (vs. 1500 with per-ticker approach)
+  - Skips tickers already updated today → further reduces calls on re-runs
+  - Sleeps 20s between chunks to stay safely under rate limits
+
+429 Circuit-Breaker:
+  - A custom requests.Session intercepts every HTTP response.
+  - On first 429 it raises immediately, stopping yfinance's internal retry loop.
+  - After 2 consecutive chunk failures → 1h pause + exactly ONE push notification.
+  - During a pause window, update_all_prices() exits immediately (zero yfinance calls).
 """
 
 import logging
 import time
-from datetime import datetime, date
+import threading
+from datetime import datetime, date, timedelta
 
+import requests
 import yfinance as yf
+import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.models import AssetPerformance, Trade
@@ -15,210 +29,341 @@ from app.database import SessionLocal
 
 logger = logging.getLogger("ainsider.price_updater")
 
-# Rate limiting: track last request time
-_last_request_time = 0.0
-_MIN_REQUEST_INTERVAL = 1.0  # seconds between requests
+# ── Config ─────────────────────────────────────────────────────────────────────
+_CHUNK_SIZE = 200          # tickers per yf.download call
+_INTER_CHUNK_SLEEP = 20    # seconds between chunks (respectful rate)
+_PAUSE_HOURS = 1           # pause duration on circuit-breaker trip
+_MAX_CHUNK_FAILURES = 2    # consecutive empty-chunk failures before pause
+
+# ── Circuit-breaker state (in-process, resets on container restart) ────────────
+_state_lock = threading.Lock()
+_rate_limit_until: datetime | None = None
+_consecutive_chunk_failures: int = 0
+_notification_sent_until: datetime | None = None  # prevents repeat notifications
 
 
-def _rate_limit():
-    """Ensure minimum interval between yfinance requests."""
-    global _last_request_time
-    elapsed = time.time() - _last_request_time
-    if elapsed < _MIN_REQUEST_INTERVAL:
-        time.sleep(_MIN_REQUEST_INTERVAL - elapsed)
-    _last_request_time = time.time()
+def _is_rate_limited() -> bool:
+    with _state_lock:
+        global _rate_limit_until
+        if _rate_limit_until and datetime.now() < _rate_limit_until:
+            return True
+        if _rate_limit_until and datetime.now() >= _rate_limit_until:
+            _rate_limit_until = None  # pause expired, reset
+        return False
 
 
-def update_ticker_price(ticker: str, db: Session) -> None:
-    """Fetch and update price data for a single ticker."""
-    try:
-        _rate_limit()
-        stock = yf.Ticker(ticker)
+def _trip_circuit_breaker(db: Session) -> None:
+    """Activate pause and send exactly ONE notification (suppressed for 1h)."""
+    global _rate_limit_until, _consecutive_chunk_failures, _notification_sent_until
+    with _state_lock:
+        _rate_limit_until = datetime.now() + timedelta(hours=_PAUSE_HOURS)
+        _consecutive_chunk_failures = 0
+        resume_str = _rate_limit_until.strftime("%H:%M")
 
-        # Get current price
-        current_price = None
+        # Only send notification if we haven't sent one recently
+        now = datetime.now()
+        should_notify = (
+            _notification_sent_until is None or now >= _notification_sent_until
+        )
+        if should_notify:
+            _notification_sent_until = now + timedelta(hours=_PAUSE_HOURS)
+
+    logger.error(
+        f"Yahoo Finance rate limit circuit-breaker tripped. "
+        f"All price updates paused until {resume_str}."
+    )
+    if should_notify:
         try:
-            info = stock.info
-            current_price = info.get("currentPrice") or info.get("regularMarketPrice")
-        except Exception:
-            pass
-
-        # Fallback: use last close from history
-        if current_price is None:
-            try:
-                hist = stock.history(period="1d")
-                if not hist.empty:
-                    current_price = float(hist["Close"].iloc[-1])
-            except Exception:
-                pass
-
-        if current_price is None:
-            logger.warning(f"Could not fetch price for {ticker}")
-            return
-
-        # Calculate YTD performance
-        ytd_pct = None
-        try:
-            year_start = date(date.today().year, 1, 1)
-            hist_ytd = stock.history(start=year_start.isoformat(), end=date.today().isoformat())
-            if not hist_ytd.empty and len(hist_ytd) > 1:
-                start_price = float(hist_ytd["Close"].iloc[0])
-                if start_price > 0:
-                    ytd_pct = round(((current_price - start_price) / start_price) * 100, 2)
-        except Exception as e:
-            logger.debug(f"Could not calculate YTD for {ticker}: {e}")
-
-        # Upsert into asset_performance
-        asset = db.query(AssetPerformance).filter(AssetPerformance.ticker == ticker).first()
-        if asset:
-            asset.current_price = round(current_price, 2)
-            asset.ytd_performance_pct = ytd_pct
-            asset.last_updated = datetime.now()
-        else:
-            asset = AssetPerformance(
-                ticker=ticker,
-                current_price=round(current_price, 2),
-                ytd_performance_pct=ytd_pct,
-                last_updated=datetime.now(),
+            from app.services.notifier import notify_system_event
+            notify_system_event(
+                db,
+                "⚠️ Yahoo Finance Rate Limit",
+                f"AInsider hit Yahoo Finance rate limits (429).\n"
+                f"Background price updates are paused until {resume_str}.\n"
+                f"No further alerts will be sent during this pause window.",
             )
-            db.add(asset)
+        except Exception as e:
+            logger.error(f"Failed to send rate-limit notification: {e}")
 
-        db.commit()
-        logger.info(f"Updated {ticker}: ${current_price:.2f}, YTD: {ytd_pct}%")
 
+def _make_intercepting_session() -> requests.Session:
+    """
+    Returns a requests.Session that raises immediately on HTTP 429,
+    preventing yfinance from its internal retry-and-toggle loop.
+    """
+    class _429RaisingSession(requests.Session):
+        def send(self, prepared_request, **kwargs):
+            response = super().send(prepared_request, **kwargs)
+            if response.status_code == 429:
+                raise RuntimeError(
+                    f"YAHOO_429: rate limited on {prepared_request.url[:80]}"
+                )
+            return response
+
+    session = _429RaisingSession()
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/125.0.0.0 Safari/537.36"
+        )
+    })
+    return session
+
+
+def _download_chunk(tickers: list[str], session: requests.Session) -> pd.DataFrame:
+    """
+    Download 5y daily Close prices for a chunk of tickers.
+    Uses yf.download() – one HTTP call for the whole chunk.
+    Returns a DataFrame with columns = ticker symbols, or empty on failure.
+    """
+    ticker_str = " ".join(tickers)
+    try:
+        # Pass our intercepting session so 429s raise immediately
+        data = yf.download(
+            ticker_str,
+            period="5y",
+            progress=False,
+            auto_adjust=False,
+            session=session,
+        )
+        if data.empty:
+            return pd.DataFrame()
+
+        # Multi-ticker download has MultiIndex columns; normalize to just Close
+        if isinstance(data.columns, pd.MultiIndex):
+            if "Close" in data.columns.get_level_values(0):
+                close = data["Close"]
+            else:
+                return pd.DataFrame()
+        else:
+            # Single ticker: columns are Open/High/Low/Close/Volume
+            if "Close" in data.columns:
+                close = data[["Close"]].rename(columns={"Close": tickers[0]})
+            else:
+                return pd.DataFrame()
+
+        # Normalize index (drop tz info, keep date only)
+        if hasattr(close.index, "tz") and close.index.tz is not None:
+            close.index = close.index.tz_localize(None)
+        close.index = close.index.normalize()
+        return close
+
+    except RuntimeError as e:
+        if "YAHOO_429" in str(e):
+            raise  # let caller handle it
+        logger.error(f"Unexpected error downloading chunk: {e}")
+        return pd.DataFrame()
     except Exception as e:
-        logger.error(f"Failed to update price for {ticker}: {e}")
-        db.rollback()
-
+        logger.error(f"yf.download error: {e}")
+        return pd.DataFrame()
 
 
 def update_all_prices() -> None:
-    """Update prices and backfill missing Trade.price_at_transaction for active tickers in batch."""
+    """
+    Main entry point. Batch-fetches prices for all tickers of
+    tracked/followed persons and backfills price_at_transaction.
+    """
+    global _consecutive_chunk_failures
+
+    if _is_rate_limited():
+        resume = _rate_limit_until.strftime("%H:%M") if _rate_limit_until else "?"
+        logger.info(f"Price update skipped – rate limit pause active until {resume}.")
+        return
+
     db = SessionLocal()
     try:
-        from app.models import TargetPerson, Trade
-        import yfinance as yf
-        import pandas as pd
-        from datetime import date, datetime, timedelta
-        from app.routers.settings import _runtime_overrides
-        from app.services.notifier import notify_system_event
+        from app.models import TargetPerson
 
-        # Check rate limit pause
-        rate_limit_until = _runtime_overrides.get("rate_limit_until")
-        if rate_limit_until and datetime.now() < rate_limit_until:
-            logger.info(f"Skipping price updates due to rate limit pause until {rate_limit_until}")
-            return
-            
-        # Get unique tickers from trades belonging to tracked or followed persons
-        tickers = [
-            row[0] for row in db.query(Trade.ticker)
+        # ── 1. Collect unique tickers (tracked/followed persons only) ──────────
+        all_tickers: list[str] = [
+            row[0] for row in
+            db.query(Trade.ticker)
             .join(TargetPerson, Trade.target_person_id == TargetPerson.id)
-            .filter((TargetPerson.is_tracked == True) | (TargetPerson.is_followed == True))
-            .distinct().all()
+            .filter(
+                (TargetPerson.is_tracked == True) | (TargetPerson.is_followed == True)
+            )
+            .distinct()
+            .all()
         ]
-        
-        if not tickers:
-            logger.info("No active tracked/followed tickers to update.")
+
+        if not all_tickers:
+            logger.info("No active tickers to update.")
             return
 
-        logger.info(f"Batch updating prices for {len(tickers)} active tickers")
+        # ── 2. Skip tickers already updated today (reduces re-run calls) ──────
+        today = datetime.now().date()
+        already_fresh = {
+            row[0] for row in
+            db.query(AssetPerformance.ticker, AssetPerformance.last_updated)
+            .filter(AssetPerformance.last_updated >= datetime(today.year, today.month, today.day))
+            .all()
+        }
+        tickers = [t for t in all_tickers if t not in already_fresh]
+        skipped_fresh = len(all_tickers) - len(tickers)
 
-        year_start = date(date.today().year, 1, 1)
-        
-        chunk_size = 50
-        for i in range(0, len(tickers), chunk_size):
-            chunk = tickers[i:i + chunk_size]
-            if not chunk: continue
-            
+        logger.info(
+            f"Price update: {len(tickers)} tickers to update "
+            f"({skipped_fresh} already fresh today, {len(all_tickers)} total). "
+            f"Chunks of {_CHUNK_SIZE} = {max(1, -(-len(tickers) // _CHUNK_SIZE))} API calls."
+        )
+
+        if not tickers:
+            logger.info("All tickers already updated today.")
+            return
+
+        year_start = pd.Timestamp(date(date.today().year, 1, 1))
+        session = _make_intercepting_session()
+        total_updated = 0
+
+        # ── 3. Process in chunks ───────────────────────────────────────────────
+        chunks = [tickers[i:i + _CHUNK_SIZE] for i in range(0, len(tickers), _CHUNK_SIZE)]
+
+        for chunk_idx, chunk in enumerate(chunks):
+            if _is_rate_limited():
+                logger.info("Circuit-breaker active mid-run. Stopping.")
+                break
+
+            logger.info(
+                f"Chunk {chunk_idx + 1}/{len(chunks)}: "
+                f"downloading {len(chunk)} tickers..."
+            )
+
             try:
-                # Fetch 5y history to ensure we can backfill most historical trades
-                data = yf.download(chunk, period="5y", progress=False, auto_adjust=False)
-                if data.empty or 'Close' not in data:
+                close_df = _download_chunk(chunk, session)
+            except RuntimeError as e:
+                if "YAHOO_429" in str(e):
+                    with _state_lock:
+                        _consecutive_chunk_failures += 1
+                        failures = _consecutive_chunk_failures
+                    logger.warning(
+                        f"429 on chunk {chunk_idx + 1} "
+                        f"(consecutive failures: {failures})"
+                    )
+                    if failures >= _MAX_CHUNK_FAILURES:
+                        _trip_circuit_breaker(db)
+                        break
+                    # One failure: sleep longer and retry
+                    logger.info(f"Sleeping 60s before next chunk...")
+                    time.sleep(60)
                     continue
-                    
-                close_data = data['Close']
-                # Normalize index to avoid tz issues during lookup
-                if hasattr(close_data.index, 'tz_localize'):
-                    close_data.index = close_data.index.tz_localize(None).normalize()
-                
-                for ticker in chunk:
-                    try:
-                        if len(chunk) == 1:
-                            s = close_data.dropna()
-                        else:
-                            if ticker not in close_data: continue
-                            s = close_data[ticker].dropna()
-                            
-                        if s.empty: continue
-                        
-                        current_price = float(s.iloc[-1])
-                        
-                        # Calculate YTD from this series
-                        ytd_pct = None
-                        year_start_ts = pd.Timestamp(year_start)
-                        # Find closest date to year start
-                        ytd_series = s.loc[year_start_ts:]
-                        if not ytd_series.empty:
-                            start_price = float(ytd_series.iloc[0])
-                            if start_price > 0:
-                                ytd_pct = round(((current_price - start_price) / start_price) * 100, 2)
-                            
-                        # Upsert into asset_performance
-                        asset = db.query(AssetPerformance).filter(AssetPerformance.ticker == ticker).first()
-                        if asset:
-                            asset.current_price = round(current_price, 2)
-                            asset.ytd_performance_pct = ytd_pct
-                            asset.last_updated = datetime.now()
-                        else:
-                            asset = AssetPerformance(
-                                ticker=ticker,
-                                current_price=round(current_price, 2),
-                                ytd_performance_pct=ytd_pct,
-                                last_updated=datetime.now(),
+                else:
+                    logger.error(f"Chunk {chunk_idx + 1} error: {e}")
+                    continue
+
+            # Empty result = likely rate limited or all tickers invalid
+            if close_df.empty:
+                with _state_lock:
+                    _consecutive_chunk_failures += 1
+                    failures = _consecutive_chunk_failures
+                logger.warning(
+                    f"Empty result for chunk {chunk_idx + 1} "
+                    f"(consecutive failures: {failures})"
+                )
+                if failures >= _MAX_CHUNK_FAILURES:
+                    _trip_circuit_breaker(db)
+                    break
+                time.sleep(60)
+                continue
+
+            # Successful chunk → reset failure counter
+            with _state_lock:
+                _consecutive_chunk_failures = 0
+
+            # ── 4. Process each ticker in the downloaded chunk ─────────────────
+            for ticker in chunk:
+                try:
+                    # Extract series for this ticker
+                    if ticker in close_df.columns:
+                        s = close_df[ticker].dropna()
+                    elif len(chunk) == 1 and not close_df.empty:
+                        s = close_df.iloc[:, 0].dropna()
+                    else:
+                        continue
+
+                    if s.empty:
+                        continue
+
+                    current_price = float(s.iloc[-1])
+
+                    # YTD performance
+                    ytd_pct = None
+                    ytd_s = s.loc[year_start:]
+                    if not ytd_s.empty:
+                        start_p = float(ytd_s.iloc[0])
+                        if start_p > 0:
+                            ytd_pct = round(
+                                ((current_price - start_p) / start_p) * 100, 2
                             )
-                            db.add(asset)
-                            
-                        # Backfill missing Trade.price_at_transaction
-                        missing_trades = db.query(Trade).join(TargetPerson).filter(
+
+                    # Upsert AssetPerformance
+                    asset = (
+                        db.query(AssetPerformance)
+                        .filter(AssetPerformance.ticker == ticker)
+                        .first()
+                    )
+                    if asset:
+                        asset.current_price = round(current_price, 2)
+                        asset.ytd_performance_pct = ytd_pct
+                        asset.last_updated = datetime.now()
+                    else:
+                        db.add(AssetPerformance(
+                            ticker=ticker,
+                            current_price=round(current_price, 2),
+                            ytd_performance_pct=ytd_pct,
+                            last_updated=datetime.now(),
+                        ))
+
+                    # Backfill missing price_at_transaction
+                    missing = (
+                        db.query(Trade)
+                        .join(TargetPerson, Trade.target_person_id == TargetPerson.id)
+                        .filter(
                             Trade.ticker == ticker,
                             Trade.price_at_transaction == None,
-                            ((TargetPerson.is_tracked == True) | (TargetPerson.is_followed == True))
-                        ).all()
-                        
-                        for trade in missing_trades:
-                            if not trade.trade_date: continue
-                            t_date = pd.Timestamp(trade.trade_date).normalize()
-                            # Find exact or next available within 7 days
-                            for days_offset in range(7):
-                                check_date = t_date + pd.Timedelta(days=days_offset)
-                                if check_date in s.index:
-                                    trade.price_at_transaction = float(s.loc[check_date])
-                                    break
-                            
-                        logger.info(f"Updated {ticker}: ${current_price:.2f}, YTD: {ytd_pct}%, Backfilled: {len(missing_trades)} trades")
-                    except Exception as e:
-                        logger.error(f"Failed processing {ticker} in batch: {e}")
-                        
-            except Exception as e:
-                err_str = str(e).lower()
-                if "429" in err_str or "too many requests" in err_str:
-                    logger.error("Yahoo Finance Rate Limit 429 Hit! Pausing for 1 hour.")
-                    _runtime_overrides["rate_limit_until"] = datetime.now() + timedelta(hours=1)
-                    notify_system_event(db, "⚠️ Yahoo Finance Rate Limit", "AInsider Tracker encountered a 429 Too Many Requests error from Yahoo Finance. Background price updates have been paused for 1 hour.")
-                    db.commit()
-                    return
-                else:
-                    logger.error(f"Failed fetching batch chunk: {e}")
+                            (TargetPerson.is_tracked == True) | (TargetPerson.is_followed == True),
+                        )
+                        .all()
+                    )
+                    backfilled = 0
+                    for trade in missing:
+                        if not trade.trade_date:
+                            continue
+                        t_date = pd.Timestamp(trade.trade_date).normalize()
+                        for offset in range(7):
+                            check = t_date + pd.Timedelta(days=offset)
+                            if check in s.index:
+                                trade.price_at_transaction = float(s.loc[check])
+                                backfilled += 1
+                                break
 
-        db.commit()
-        logger.info("Price update complete")
-        try:
-            from app.routers.settings import _runtime_overrides
-            _runtime_overrides["last_price_update"] = datetime.now()
-        except Exception:
-            pass
+                    total_updated += 1
+                    if backfilled:
+                        logger.debug(
+                            f"{ticker}: ${current_price:.2f} YTD:{ytd_pct}% "
+                            f"backfilled:{backfilled}"
+                        )
+
+                except Exception as e:
+                    logger.error(f"Processing {ticker} failed: {e}")
+
+            db.commit()
+            logger.info(
+                f"Chunk {chunk_idx + 1}/{len(chunks)} done "
+                f"(+{len(chunk)} tickers). Total so far: {total_updated}"
+            )
+
+            # Sleep between chunks (not after the last one)
+            if chunk_idx < len(chunks) - 1:
+                logger.debug(f"Sleeping {_INTER_CHUNK_SLEEP}s before next chunk…")
+                time.sleep(_INTER_CHUNK_SLEEP)
+
+        logger.info(
+            f"Price update complete. Updated: {total_updated}/{len(tickers)} tickers."
+        )
+
     except Exception as e:
-        logger.error(f"Price update batch failed: {e}")
+        logger.error(f"Price update run failed: {e}")
         db.rollback()
     finally:
         db.close()
