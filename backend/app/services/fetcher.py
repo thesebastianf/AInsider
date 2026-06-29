@@ -933,78 +933,92 @@ class DirectorsDealingsProvider(BaseDataSourceProvider):
 
 
 class SocialInverseCramerProvider(BaseDataSourceProvider):
-    """Parses CNBC news rss feed mentioning Cramer's recommendations.
+    """Parses Quiver Quantitative's Jim Cramer CNBC tracker webpage directly.
     Transforms Cramers recommendations to inverse trade signals:
       - Buy / bullish call -> Synthetic SELL trade
       - Sell / bearish call -> Synthetic BUY trade
-    Does not require any API Key, queries public feeds.
+    Does not require any API Key, scrapes the public web page directly.
     """
     
-    FEED_URL = "https://search.cnbc.com/rs/search/all/view.xml?partnerId=2000&keywords=Jim%20Cramer"
+    URL = "https://www.quiverquant.com/cnbctracker/Jim%20Cramer"
 
-    def fetch_trades(self, limit: int = 30) -> List[RawTrade]:
-        import xml.etree.ElementTree as ET
+    def fetch_trades(self, limit: int = 150) -> List[RawTrade]:
+        from datetime import datetime
+        import re
         trades = []
         try:
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-            resp = httpx.get(self.FEED_URL, headers=headers, timeout=15.0)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            resp = httpx.get(self.URL, headers=headers, timeout=20.0)
             if resp.status_code != 200:
+                logger.warning(f"SocialInverseCramerProvider: Failed to fetch page, status {resp.status_code}")
                 return []
                 
-            root = ET.fromstring(resp.content)
-            items = root.findall(".//item")
+            # Parse table rows from the HTML
+            rows = re.findall(r"<tr.*?>(.*?)</tr>", resp.text, re.DOTALL)
+            count = 0
             
-            for item in items[:limit]:
-                title = item.find("title")
-                title_text = title.text if title is not None else ""
-                desc = item.find("description")
-                desc_text = desc.text if desc is not None else ""
-                link = item.find("link")
-                link_url = link.text if link is not None else ""
-                
-                # Check for ticker mentions in brackets like (AAPL), (TSLA)
-                tickers = re.findall(r"\(([A-Z]{1,5})\)", title_text + " " + desc_text)
-                if not tickers:
+            for r in rows:
+                if count >= limit:
+                    break
+                    
+                # Clean HTML tags to get pure text content of the row
+                clean_row = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", r)).strip()
+                if not clean_row or "Name *" in clean_row:
                     continue
                     
-                combined_text = (title_text + " " + desc_text).lower()
-                
-                # Exclude interview segments
-                if "interview" in combined_text:
+                # Check for structure: "Jim Cramer [Date] [Ticker] [Direction] [Notes]"
+                if not clean_row.startswith("Jim Cramer"):
                     continue
                     
-                # Determine Cramers advice and invert it
-                is_buy = any(x in combined_text for x in ["buy", "bullish", "recommend", "recommendation", "own", "pick", "favorite"])
-                is_sell = any(x in combined_text for x in ["sell", "bearish", "avoid", "dump", "don't buy", "stay away", "warning"])
+                # Parse with regex: "Jim Cramer {Date} {Ticker} {Direction} {Notes}"
+                # Example: "Jim Cramer June 18, 2026 INTC Buy None -->"
+                match = re.search(r"Jim\s+Cramer\s+([A-Za-z]+\s+\d+,\s+\d{4})\s+([A-Z]{1,5})\s+([A-Za-z\s\-\'\!]+)\s+([A-Za-z0-9]+)?", clean_row)
+                if not match:
+                    continue
+                    
+                date_str = match.group(1).strip()
+                ticker = match.group(2).strip()
+                direction = match.group(3).strip().lower()
                 
-                # Inverse Logic: Cramer BUY -> Inverse SELL, Cramer SELL -> Inverse BUY
+                # Filter out interview segments or holds
+                if "interview" in direction or "hold" in direction or "neutral" in direction:
+                    continue
+                    
+                # Parse date
+                try:
+                    t_date = datetime.strptime(date_str, "%B %d, %Y").date()
+                except Exception:
+                    t_date = date.today()
+                    
+                # Inverse Logic: Cramer BUY/Bullish -> SELL, Cramer SELL/Bearish -> BUY
+                is_buy = any(x in direction for x in ["buy", "bullish", "positive", "long", "start a position"])
+                is_sell = any(x in direction for x in ["sell", "bearish", "negative", "avoid", "not recommending"])
+                
                 if is_buy and not is_sell:
                     trade_type = "SELL"
                 elif is_sell and not is_buy:
                     trade_type = "BUY"
                 else:
-                    # Default fallback to BUY (if just general mentions)
-                    trade_type = "SELL" 
+                    # Ignore if call direction is unclear
+                    continue
                     
-                for ticker in set(tickers):
-                    # Filter out noise tickers that are not actual stock symbols
-                    if ticker in ("CNBC", "USA", "CEO", "IPO", "ETF", "SPY", "QQQ"):
-                        continue
-                        
-                    trades.append(RawTrade(
-                        person_name="Inverse Cramer",
-                        person_category="Social",
-                        committees=["Inverse Cramer Tracker"],
-                        ticker=ticker,
-                        trade_type=trade_type,
-                        amount_range="$10k-$50k",  # Synthetic standard size
-                        trade_date=date.today(),
-                        filing_date=date.today(),
-                        source_url=link_url
-                    ))
-                    logger.info(f"Inverse Cramer parsed: {trade_type} {ticker} (Inverse of Cramer Call)")
+                trades.append(RawTrade(
+                    person_name="Inverse Cramer",
+                    person_category="Social",
+                    committees=["Inverse Cramer Tracker"],
+                    ticker=ticker,
+                    trade_type=trade_type,
+                    amount_range="$10k-$50k",
+                    trade_date=t_date,
+                    filing_date=t_date,
+                    source_url=self.URL
+                ))
+                count += 1
+                logger.info(f"Inverse Cramer parsed: {trade_type} {ticker} (Inverse of Cramer {direction.upper()} call on {date_str})")
         except Exception as e:
-            logger.error(f"SocialInverseCramerProvider: Failed to parse feed: {e}")
+            logger.error(f"SocialInverseCramerProvider: Failed to scrape page: {e}")
         return trades
 
 

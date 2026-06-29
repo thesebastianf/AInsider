@@ -121,8 +121,32 @@ def seed_database(db: Session) -> bool:
             )
             db.add(ds_config)
             seeded = True
+        else:
+            # If the source exists but is missing some of the new default CIKs, merge them
+            if p_type in ["sec13f", "sec13d"]:
+                cfg = dict(existing.config_json or {})
+                old_list_raw = cfg.get("cik_list", "")
+                old_list = [c.strip() for c in old_list_raw.split(",") if c.strip()]
+                
+                # Default new CIKs we want to make sure exist
+                default_list_raw = default_cfg.get("cik_list", "")
+                default_list = [c.strip() for c in default_list_raw.split(",") if c.strip()]
+                
+                merged = list(old_list)
+                added = False
+                for c in default_list:
+                    if c not in merged:
+                        merged.append(c)
+                        added = True
+                
+                if added:
+                    cfg["cik_list"] = ",".join(merged)
+                    existing.config_json = cfg
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(existing, "config_json")
+                    seeded = True
 
     if seeded:
         db.commit()
-        logger.info("Database seeding completed.")
+        logger.info("Database seeding / updates completed.")
     return seeded

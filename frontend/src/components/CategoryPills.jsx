@@ -6,6 +6,7 @@ const categories = [
   'Corporate Insider',
   'Fund Manager',
   'Activist Investor',
+  'Social',
 ];
 
 export default function CategoryPills({ active, onChange }) {
