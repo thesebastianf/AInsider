@@ -1,8 +1,16 @@
-const categories = ['All', 'Congress', 'Senate', 'Corporate Insider', 'Fund Manager'];
+const categories = [
+  'All',
+  'Congress',
+  'Senate',
+  'Executive Branch',
+  'Corporate Insider',
+  'Fund Manager',
+  'Activist Investor',
+];
 
 export default function CategoryPills({ active, onChange }) {
   return (
-    <div className="flex gap-2 overflow-x-auto no-scrollbar px-5 py-3">
+    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
       {categories.map((cat) => {
         const isActive = active === cat;
         return (

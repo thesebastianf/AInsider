@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Star, Bell, Trash2, User, Copy, X, Loader2, Plus } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Star, Bell, Trash2, User, Copy, X, Loader2, Plus, Pencil, RotateCcw } from 'lucide-react';
+import { updateDisplayName, uploadPersonPhoto, deletePersonPhoto } from '../api/client';
 
 const TICKER_INFO = {
   AAPL: { name: 'Apple Inc.', isin: 'US0378331005' },
@@ -51,18 +52,29 @@ const getAvatarColor = (name) => {
   return `hsl(${hue}, 60%, 35%)`;
 };
 
-export default function PersonCard({ person, performance, onToggleFollow, onToggleSubscribe, onUntrack, onTrack }) {
+export default function PersonCard({ person, performance, onToggleFollow, onToggleSubscribe, onUntrack, onTrack, onRefresh }) {
   const [showHistory, setShowHistory] = useState(false);
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(false);
   const [copiedIsin, setCopiedIsin] = useState(null);
   const [imgError, setImgError] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [ytdMode, setYtdMode] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Effective values: custom overrides auto
+  const effectiveName = person.display_name || person.name;
+  const effectivePhoto = person.custom_photo_url || person.photo_url;
 
   const trade = person.latest_trade;
   const perf = trade ? performance?.[trade.ticker] : null;
 
   const handleOpenHistory = async (e) => {
+    if (showEdit) return; // don't open history when editing
     setShowHistory(true);
     setLoading(true);
     try {
@@ -73,6 +85,52 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
       console.error(e);
     }
     setLoading(false);
+  };
+
+  const handleOpenEdit = (e) => {
+    e.stopPropagation();
+    setEditName(person.display_name || '');
+    setShowEdit(true);
+  };
+
+  const handleSaveName = async () => {
+    setEditSaving(true);
+    try {
+      await updateDisplayName(person.id, editName);
+      onRefresh?.();
+    } catch (e) { console.error(e); }
+    setEditSaving(false);
+    setShowEdit(false);
+  };
+
+  const handleRevertName = async () => {
+    setEditSaving(true);
+    try {
+      await updateDisplayName(person.id, null);
+      onRefresh?.();
+    } catch (e) { console.error(e); }
+    setEditSaving(false);
+    setShowEdit(false);
+  };
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      await uploadPersonPhoto(person.id, file);
+      onRefresh?.();
+    } catch (err) { console.error(err); }
+    setUploadingPhoto(false);
+  };
+
+  const handleDeletePhoto = async () => {
+    setUploadingPhoto(true);
+    try {
+      await deletePersonPhoto(person.id);
+      onRefresh?.();
+    } catch (err) { console.error(err); }
+    setUploadingPhoto(false);
   };
 
   const handleCopyIsin = (e, isin) => {
@@ -95,11 +153,12 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
         
         <div className="flex justify-between items-start mb-3 relative z-10 gap-2">
           <div className="flex gap-4 min-w-0 flex-1">
-            <div className="w-14 h-14 rounded-full overflow-hidden bg-surface-2 border-2 border-border shrink-0 flex items-center justify-center">
-              {person.photo_url && !imgError ? (
+            {/* Avatar with edit overlay */}
+            <div className="w-14 h-14 rounded-full overflow-hidden bg-surface-2 border-2 border-border shrink-0 flex items-center justify-center relative group">
+              {effectivePhoto && !imgError ? (
                 <img 
-                  src={person.photo_url} 
-                  alt={person.name} 
+                  src={effectivePhoto} 
+                  alt={effectiveName} 
                   onError={() => setImgError(true)}
                   className="w-full h-full object-cover" 
                 />
@@ -108,9 +167,20 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
                   className="w-full h-full flex items-center justify-center text-sm font-extrabold text-slate-100 select-none"
                   style={{ backgroundColor: getAvatarColor(person.name) }}
                 >
-                  {getInitials(person.name)}
+                  {getInitials(effectiveName)}
                 </div>
               )}
+              {/* Edit overlay on hover (tracked persons) */}
+              {person.is_tracked && (
+                <button
+                  onClick={handleOpenEdit}
+                  className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full"
+                  title="Edit person"
+                >
+                  {uploadingPhoto ? <Loader2 size={14} className="animate-spin text-white" /> : <Pencil size={14} className="text-white" />}
+                </button>
+              )}
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
             </div>
             
             <div className="min-w-0 flex-1">
@@ -118,7 +188,10 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
                 style={{ color: 'var(--text-bright)' }}
                 title={person.name}
               >
-                <span className="truncate">{person.name}</span>
+                <span className="truncate">{effectiveName}</span>
+                {person.display_name && (
+                  <span className="text-[9px] text-slate-500 font-normal shrink-0" title={`Original: ${person.name}`}>alias</span>
+                )}
                 {!person.is_active && (
                   <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-red-500/15 text-red-500 border border-red-500/20 uppercase tracking-wider shrink-0">
                     Retired
@@ -183,11 +256,39 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
           </div>
         </div>
 
+        {/* Stats Header with YTD Toggle */}
+        <div className="flex items-center justify-between mb-2 mt-1 relative z-10">
+          <div className="flex gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); setYtdMode(false); }}
+              className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition-all ${!ytdMode ? 'bg-cyan-600/20 text-cyan-400 border-cyan-500/40' : 'bg-slate-800 text-slate-500 border-slate-700'}`}
+            >
+              All-Time
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setYtdMode(true); }}
+              className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition-all ${ytdMode ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-slate-800 text-slate-500 border-slate-700'}`}
+            >
+              YTD
+            </button>
+          </div>
+          {/* Date range */}
+          {person.first_trade_date && person.last_trade_date && (
+            <span className="text-[9px] text-slate-600 font-mono">
+              {new Date(person.first_trade_date).getFullYear()} – {new Date(person.last_trade_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}
+            </span>
+          )}
+        </div>
+
         {/* Condensed Aggregated Statistics */}
-        <div className="grid grid-cols-2 gap-2 mb-3 mt-1 relative z-10">
+        <div className="grid grid-cols-2 gap-2 mb-3 relative z-10">
           <div className="bg-surface-2 p-2 rounded-lg border border-border/80 text-center">
-            <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Total Trades</span>
-            <span className="text-xs font-extrabold text-slate-200">{person.trade_count}</span>
+            <span className="text-[9px] text-slate-500 uppercase tracking-wider block">
+              {ytdMode ? 'YTD Trades' : 'Total Trades'}
+            </span>
+            <span className="text-xs font-extrabold text-slate-200">
+              {ytdMode ? (person.ytd_trade_count ?? 0) : person.trade_count}
+            </span>
           </div>
           <div className="bg-surface-2 p-2 rounded-lg border border-border/80 text-center">
             <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Last 30 Days</span>
@@ -196,11 +297,17 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
         </div>
 
         <div className="flex justify-between items-center text-[11px] py-1 mt-1 border-b border-border/40 relative z-10">
-          <span className="text-slate-500 dark:text-slate-400">Tendency</span>
+          <span className="text-slate-500 dark:text-slate-400">
+            Tendency{ytdMode ? <span className="text-amber-500 ml-1">(YTD)</span> : ''}
+          </span>
           <span className="font-semibold text-slate-300">
-            <span className="text-green-500 font-bold">{person.buy_count} BUY</span>
+            <span className="text-green-500 font-bold">
+              {ytdMode ? (person.ytd_buy_count ?? 0) : person.buy_count} BUY
+            </span>
             <span className="text-slate-600 px-1">/</span>
-            <span className="text-red-500 font-bold">{person.sell_count} SELL</span>
+            <span className="text-red-500 font-bold">
+              {ytdMode ? (person.ytd_sell_count ?? 0) : person.sell_count} SELL
+            </span>
           </span>
         </div>
 
@@ -231,6 +338,7 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
           </div>
         )}
       </div>
+
 
       {/* Trade History Modal */}
       {showHistory && (
@@ -422,6 +530,103 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
                 className="flex-1 py-2 px-4 rounded-lg text-xs font-semibold bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/20 transition-colors"
               >
                 Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Modal ────────────────────────────────────────── */}
+      {showEdit && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowEdit(false)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-slate-800">
+              <h3 className="text-sm font-semibold text-slate-100">Edit Person</h3>
+              <button onClick={() => setShowEdit(false)} className="text-slate-500 hover:text-slate-300">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              {/* Photo Upload */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Profile Photo</label>
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-slate-700 shrink-0 flex items-center justify-center bg-surface-2">
+                    {(person.custom_photo_url || person.photo_url) && !imgError ? (
+                      <img src={person.custom_photo_url || person.photo_url} alt={effectiveName} className="w-full h-full object-cover" onError={() => setImgError(true)} />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-sm font-extrabold text-slate-100" style={{ backgroundColor: getAvatarColor(person.name) }}>
+                        {getInitials(effectiveName)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 flex-1">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingPhoto}
+                      className="text-xs py-1.5 px-3 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-colors font-semibold"
+                    >
+                      {uploadingPhoto ? 'Uploading…' : 'Upload Photo'}
+                    </button>
+                    {person.custom_photo_url && (
+                      <button
+                        onClick={handleDeletePhoto}
+                        disabled={uploadingPhoto}
+                        className="text-xs py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition-colors"
+                      >
+                        Remove Custom Photo
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Display Name */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                  Display Name <span className="text-slate-600 normal-case font-normal">(original: {person.name})</span>
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  placeholder={person.name}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-cyan-500/60"
+                />
+                <p className="text-[10px] text-slate-600 mt-1">The original name is kept as the unique ID. Deduplication always uses the original.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-2 px-5 pb-5">
+              {person.display_name && (
+                <button
+                  onClick={handleRevertName}
+                  disabled={editSaving}
+                  className="flex items-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition-colors"
+                  title="Revert to original name"
+                >
+                  <RotateCcw size={12} /> Revert
+                </button>
+              )}
+              <button
+                onClick={() => setShowEdit(false)}
+                className="flex-1 py-2 px-4 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveName}
+                disabled={editSaving}
+                className="flex-1 py-2 px-4 rounded-lg text-xs font-semibold bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 border border-cyan-500/30 transition-colors"
+              >
+                {editSaving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>

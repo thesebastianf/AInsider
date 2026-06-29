@@ -126,6 +126,12 @@ if STATIC_DIR.exists():
     # Mount static assets (JS, CSS, images)
     app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="assets")
 
+# ─── Serve User-Uploaded Photos ────────────────────────────────
+from pathlib import Path as _Path
+_UPLOAD_DIR = _Path("/app/uploads") if _Path("/app").exists() else _Path(__file__).parent.parent.parent / "uploads"
+_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_UPLOAD_DIR)), name="uploads")
+
     # SPA fallback: serve index.html for all non-API routes
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):

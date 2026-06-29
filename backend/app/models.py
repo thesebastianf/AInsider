@@ -18,10 +18,12 @@ class TargetPerson(Base):
     __tablename__ = "target_persons"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False, index=True)
+    name = Column(String(255), nullable=False, index=True)           # canonical/original name (used for dedup)
+    display_name = Column(String(255), nullable=True)                # optional user-set alias shown in UI
     category = Column(String(50), nullable=False)  # "Congress", "Senate", "Fund Manager"
     committee_affiliations = Column(JSON, default=list)
-    photo_url = Column(String(500), nullable=True)
+    photo_url = Column(String(500), nullable=True)                   # auto-fetched (Wikipedia etc.)
+    custom_photo_url = Column(String(500), nullable=True)            # user-uploaded photo (overrides photo_url)
     description = Column(Text, nullable=True)
     is_tracked = Column(Boolean, default=False, nullable=False, index=True)
     is_active = Column(Boolean, default=True, nullable=False)

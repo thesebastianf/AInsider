@@ -44,9 +44,11 @@ class TradeList(BaseModel):
 
 class PersonBase(BaseModel):
     name: str
+    display_name: Optional[str] = None
     category: str
     committee_affiliations: Optional[List[str]] = []
     photo_url: Optional[str] = None
+    custom_photo_url: Optional[str] = None
     description: Optional[str] = None
     is_tracked: Optional[bool] = False
     is_active: Optional[bool] = True
@@ -59,8 +61,13 @@ class PersonOut(PersonBase):
     latest_trade: Optional[TradeOut] = None
     trade_count: int = 0
     trade_count_30d: int = 0
+    ytd_trade_count: int = 0
     buy_count: int = 0
     sell_count: int = 0
+    ytd_buy_count: int = 0
+    ytd_sell_count: int = 0
+    first_trade_date: Optional[date] = None
+    last_trade_date: Optional[date] = None
     avg_trade_return_pct: Optional[float] = None
 
     class Config:

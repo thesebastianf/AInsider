@@ -46,6 +46,22 @@ export const trackPerson = (id, isTracked = true) =>
 export const toggleSubscription = (personId) =>
   request(`/persons/${personId}/subscribe`, { method: 'PUT' });
 
+export const updateDisplayName = (personId, displayName) =>
+  request(`/persons/${personId}/display-name`, {
+    method: 'PUT',
+    body: JSON.stringify({ display_name: displayName || null }),
+  });
+
+export const uploadPersonPhoto = (personId, file) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return fetch(`/api/persons/${personId}/upload-photo`, { method: 'POST', body: fd })
+    .then(r => { if (!r.ok) throw new Error('Upload failed'); return r.json(); });
+};
+
+export const deletePersonPhoto = (personId) =>
+  request(`/persons/${personId}/upload-photo`, { method: 'DELETE' });
+
 // ═══ Trades ══════════════════════════════════════════════════
 export const getTrades = (params = {}) => {
   const qs = new URLSearchParams(params).toString();

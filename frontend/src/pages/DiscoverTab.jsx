@@ -9,7 +9,7 @@ import { Compass, Loader2 } from 'lucide-react';
 export default function DiscoverTab() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
-  const [sortBy, setSortBy] = useState('name');
+  const [sortBy, setSortBy] = useState('recent_trade');
   const [trackingId, setTrackingId] = useState(null);
 
   const fetchAvailable = useCallback(() => {
@@ -68,8 +68,10 @@ export default function DiscoverTab() {
             onChange={e => setSortBy(e.target.value)}
             className="px-3 py-2 bg-slate-900/50 dark:bg-slate-950/50 border border-slate-700/50 rounded-xl text-xs text-slate-300 outline-none focus:border-cyan-500/50 appearance-none"
           >
-            <option value="name">Sort by Name</option>
+            <option value="recent_trade">Most Recent Trade</option>
             <option value="trade_count">Most Trades</option>
+            <option value="performance">Best Performance</option>
+            <option value="name">Name A–Z</option>
           </select>
         </div>
       </div>
@@ -103,6 +105,7 @@ export default function DiscoverTab() {
                   onToggleSubscribe={() => {}}
                   onUntrack={() => {}}
                   onTrack={handleTrack}
+                  onRefresh={refetch}
                 />
               </div>
             ))}
