@@ -823,13 +823,20 @@ class DirectorsDealingsProvider(BaseDataSourceProvider):
                 return []
                 
             items = channel.findall("item")
-            recent = items[:limit]
+            recent = items[:100]  # Read up to 100 recent entries to populate the archive
             
             for item in recent:
                 try:
                     title = item.find("title").text or ""
-                    # E.g. "EQS-DD: DATRON AG: PCI Private Capital Investment GmbH, Kauf"
-                    if not title.startswith("EQS-DD:"):
+                    # E.g. "EQS-DD: DATRON AG: ...", "DGAP-DD: Rheinmetall AG: ...", "DD: Company: ..."
+                    # Match any string starting with DD tags or ending with -DD or -News before the colon
+                    prefix_match = re.match(r"^([A-Za-z0-9\-]+)(?:-DD|-News|DD)?\s*:", title)
+                    if not prefix_match:
+                        continue
+                        
+                    # Verify it's actually a Directors' Dealings (DD) or related corporate news notification
+                    prefix = prefix_match.group(1).upper()
+                    if not any(x in prefix for x in ["EQS", "DGAP", "DD"]):
                         continue
                     
                     parts = title.split(":")
