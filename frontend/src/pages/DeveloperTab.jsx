@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useApi } from '../hooks/useApi';
 import { getSystemStats, getSystemLogs, triggerPipeline, triggerBackup, triggerPrices } from '../api/client';
-import { BarChart3, Clock, Users, Activity, Cpu, Database, Play, Loader2, Github, Coffee } from 'lucide-react';
+import { BarChart3, Clock, Users, Activity, Cpu, Database, Play, Loader2, ExternalLink, Heart } from 'lucide-react';
 import StatWidget from '../components/StatWidget';
 import LogConsole from '../components/LogConsole';
 
@@ -174,11 +174,11 @@ export default function DeveloperTab() {
           {/* Links */}
           <div className="glass-card p-3 flex justify-around items-center mt-4">
             <a href="https://github.com/thesebastianf/AInsider" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-xs font-semibold">
-              <Github size={16} /> GitHub
+              <ExternalLink size={16} /> GitHub
             </a>
             <div className="w-px h-4 bg-slate-700"></div>
             <a href="https://ko-fi.com/thesebastianf" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-slate-400 hover:text-[#FF5E5B] transition-colors text-xs font-semibold">
-              <Coffee size={16} /> Ko-fi
+              <Heart size={16} /> Ko-fi
             </a>
           </div>
         </div>
