@@ -18,7 +18,7 @@ from app.database import SessionLocal
 from app.models import TargetPerson, Trade, Subscription
 from app.services.fetcher import fetch_trades, RawTrade
 from app.services.llm_provider import evaluate_trade
-from app.services.price_updater import update_ticker_price
+
 from app.services.notifier import notify_all_enabled
 
 logger = logging.getLogger("ainsider.pipeline")
@@ -41,37 +41,6 @@ def _get_or_create_person(db: Session, raw: RawTrade) -> TargetPerson:
     return person
 
 
-# In-memory price cache for the current pipeline run: ticker -> pandas.DataFrame
-_price_cache: dict = {}
-
-
-
-def _get_historical_price(ticker: str, trade_date) -> float | None:
-    """Fetch the close price of a ticker on a specific trade date from the pre-populated cache."""
-    import pandas as pd
-    
-    hist = _price_cache.get(ticker)
-    if hist is None or hist.empty:
-        return None
-
-    # Try to find the exact date, or the next available trading day within 7 days
-    target_date = pd.Timestamp(trade_date)
-    for i in range(7):
-        check_date = target_date + pd.Timedelta(days=i)
-        if check_date in hist.index:
-            return float(hist.loc[check_date])
-            
-    return None
-
-
-    # Try to find the exact date, or the next available trading day within 7 days
-    target_date = pd.Timestamp(trade_date)
-    for i in range(7):
-        check_date = target_date + pd.Timedelta(days=i)
-        if check_date in hist.index:
-            return float(hist.loc[check_date, "Close"])
-            
-    return None
 
 
 def _insert_trade(db: Session, person: TargetPerson, raw: RawTrade, price_at_transaction: float | None = None) -> Trade | None:
@@ -167,48 +136,6 @@ def run_pipeline() -> dict:
         _price_cache = {}  # Reset cache each pipeline run
 
 
-        unique_tickers = list(set(raw.ticker for raw in raw_trades if raw.ticker))
-        
-        add_log("INFO", f"Will resolve historical prices for {len(unique_tickers)} unique tickers...")
-
-        # ─── BATCH DOWNLOAD HISTORICAL PRICES ────────────────────────
-        # Instead of 1300 separate requests with delays, batch them!
-        import yfinance as yf
-        import pandas as pd
-        import time
-        
-        chunk_size = 50
-        for i in range(0, len(unique_tickers), chunk_size):
-            chunk = unique_tickers[i:i + chunk_size]
-            if not chunk: continue
-            
-            try:
-                # yfinance download handles multiple tickers incredibly fast in one request
-                data = yf.download(chunk, period="5y", auto_adjust=False, progress=False)
-                if data.empty:
-                    continue
-                    
-                if 'Close' in data:
-                    close_data = data['Close']
-                    # Normalize index to avoid tz issues
-                    close_data.index = close_data.index.tz_localize(None).normalize()
-                    
-                    if len(chunk) == 1:
-                        # If only one ticker, close_data is a Series
-                        _price_cache[chunk[0]] = close_data
-                    else:
-                        # MultiIndex DataFrame, extract each column (ticker) as a Series
-                        for t in chunk:
-                            if t in close_data:
-                                s = close_data[t].dropna()
-                                if not s.empty:
-                                    _price_cache[t] = s
-            except Exception as e:
-                logger.warning(f"Batch price download failed for chunk {i}: {e}")
-            
-            # Tiny delay between batches to be safe
-            time.sleep(1.0)
-            
         # ─── Pass 1: Fast Discovery ──────────────────────────────────
         # Create all TargetPersons instantly so the 'Discover' tab populates
         # immediately, before the 50+ minute yfinance rate-limited loop begins.
@@ -239,8 +166,7 @@ def run_pipeline() -> dict:
                     continue
                     
                 # New trade, resolve price using DataFrame cache
-                historical_price = _get_historical_price(raw.ticker, raw.trade_date)
-                trade = _insert_trade(db, person, raw, price_at_transaction=historical_price)
+                trade = _insert_trade(db, person, raw, price_at_transaction=None)
                 if trade is None:
                     stats["duplicates"] += 1
                     continue
@@ -276,15 +202,10 @@ def run_pipeline() -> dict:
 
                 db.commit()
 
-                # Step 5: Price update (only once per ticker)
+                # Step 5: Price update is now batched at the end of the pipeline
                 if raw.ticker not in updated_tickers:
-                    try:
-                        update_ticker_price(raw.ticker, db)
-                        updated_tickers.add(raw.ticker)
-                        stats["prices_updated"] += 1
-                    except Exception as e:
-                        logger.error(f"Price update failed for {raw.ticker}: {e}")
-                        add_log("WARN", f"Price update failed for {raw.ticker}")
+                    updated_tickers.add(raw.ticker)
+                    stats["prices_updated"] += 1
 
                 # Step 6: Notifications to all enabled providers
                 try:

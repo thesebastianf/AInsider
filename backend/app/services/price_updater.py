@@ -93,14 +93,22 @@ def update_ticker_price(ticker: str, db: Session) -> None:
 
 
 def update_all_prices() -> None:
-    """Update prices for all tickers associated with tracked/followed persons in batch."""
+    """Update prices and backfill missing Trade.price_at_transaction for active tickers in batch."""
     db = SessionLocal()
     try:
         from app.models import TargetPerson, Trade
         import yfinance as yf
         import pandas as pd
-        from datetime import date
-        
+        from datetime import date, datetime, timedelta
+        from app.routers.settings import _runtime_overrides
+        from app.services.notifier import notify_system_event
+
+        # Check rate limit pause
+        rate_limit_until = _runtime_overrides.get("rate_limit_until")
+        if rate_limit_until and datetime.now() < rate_limit_until:
+            logger.info(f"Skipping price updates due to rate limit pause until {rate_limit_until}")
+            return
+            
         # Get unique tickers from trades belonging to tracked or followed persons
         tickers = [
             row[0] for row in db.query(Trade.ticker)
@@ -115,7 +123,6 @@ def update_all_prices() -> None:
 
         logger.info(f"Batch updating prices for {len(tickers)} active tickers")
 
-        # Fetch history from start of year to today for YTD calculation
         year_start = date(date.today().year, 1, 1)
         
         chunk_size = 50
@@ -124,11 +131,15 @@ def update_all_prices() -> None:
             if not chunk: continue
             
             try:
-                data = yf.download(chunk, start=year_start.isoformat(), end=date.today().isoformat(), progress=False, auto_adjust=False)
+                # Fetch 5y history to ensure we can backfill most historical trades
+                data = yf.download(chunk, period="5y", progress=False, auto_adjust=False)
                 if data.empty or 'Close' not in data:
                     continue
                     
                 close_data = data['Close']
+                # Normalize index to avoid tz issues during lookup
+                if hasattr(close_data.index, 'tz_localize'):
+                    close_data.index = close_data.index.tz_localize(None).normalize()
                 
                 for ticker in chunk:
                     try:
@@ -141,11 +152,16 @@ def update_all_prices() -> None:
                         if s.empty: continue
                         
                         current_price = float(s.iloc[-1])
-                        start_price = float(s.iloc[0])
                         
+                        # Calculate YTD from this series
                         ytd_pct = None
-                        if start_price > 0:
-                            ytd_pct = round(((current_price - start_price) / start_price) * 100, 2)
+                        year_start_ts = pd.Timestamp(year_start)
+                        # Find closest date to year start
+                        ytd_series = s.loc[year_start_ts:]
+                        if not ytd_series.empty:
+                            start_price = float(ytd_series.iloc[0])
+                            if start_price > 0:
+                                ytd_pct = round(((current_price - start_price) / start_price) * 100, 2)
                             
                         # Upsert into asset_performance
                         asset = db.query(AssetPerformance).filter(AssetPerformance.ticker == ticker).first()
@@ -162,12 +178,37 @@ def update_all_prices() -> None:
                             )
                             db.add(asset)
                             
-                        logger.info(f"Updated {ticker}: ${current_price:.2f}, YTD: {ytd_pct}%")
+                        # Backfill missing Trade.price_at_transaction
+                        missing_trades = db.query(Trade).join(TargetPerson).filter(
+                            Trade.ticker == ticker,
+                            Trade.price_at_transaction == None,
+                            ((TargetPerson.is_tracked == True) | (TargetPerson.is_followed == True))
+                        ).all()
+                        
+                        for trade in missing_trades:
+                            if not trade.trade_date: continue
+                            t_date = pd.Timestamp(trade.trade_date).normalize()
+                            # Find exact or next available within 7 days
+                            for days_offset in range(7):
+                                check_date = t_date + pd.Timedelta(days=days_offset)
+                                if check_date in s.index:
+                                    trade.price_at_transaction = float(s.loc[check_date])
+                                    break
+                            
+                        logger.info(f"Updated {ticker}: ${current_price:.2f}, YTD: {ytd_pct}%, Backfilled: {len(missing_trades)} trades")
                     except Exception as e:
                         logger.error(f"Failed processing {ticker} in batch: {e}")
                         
             except Exception as e:
-                logger.error(f"Failed fetching batch chunk: {e}")
+                err_str = str(e).lower()
+                if "429" in err_str or "too many requests" in err_str:
+                    logger.error("Yahoo Finance Rate Limit 429 Hit! Pausing for 1 hour.")
+                    _runtime_overrides["rate_limit_until"] = datetime.now() + timedelta(hours=1)
+                    notify_system_event(db, "⚠️ Yahoo Finance Rate Limit", "AInsider Tracker encountered a 429 Too Many Requests error from Yahoo Finance. Background price updates have been paused for 1 hour.")
+                    db.commit()
+                    return
+                else:
+                    logger.error(f"Failed fetching batch chunk: {e}")
 
         db.commit()
         logger.info("Price update complete")
@@ -181,4 +222,3 @@ def update_all_prices() -> None:
         db.rollback()
     finally:
         db.close()
-

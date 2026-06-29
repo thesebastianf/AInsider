@@ -206,3 +206,16 @@ def notify_all_enabled(
             logger.warning(f"Notification failed for {cfg.name} ({cfg.provider_type})")
 
     return results
+
+
+def notify_system_event(db: Session, title: str, message: str) -> None:
+    """
+    Send a system-level notification (e.g. rate limit warnings) to all enabled providers.
+    """
+    configs = (
+        db.query(NotificationConfig)
+        .filter(NotificationConfig.is_enabled == True)  # noqa: E712
+        .all()
+    )
+    for cfg in configs:
+        send_notification(cfg, title, message)
