@@ -182,17 +182,3 @@ def update_all_prices() -> None:
     finally:
         db.close()
 
-
-        for ticker in tickers:
-            update_ticker_price(ticker, db)
-
-        logger.info("Price update complete")
-        try:
-            from app.routers.settings import _runtime_overrides
-            _runtime_overrides["last_price_update"] = datetime.now()
-        except Exception:
-            pass
-    except Exception as e:
-        logger.error(f"Price update batch failed: {e}")
-    finally:
-        db.close()
