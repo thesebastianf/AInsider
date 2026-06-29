@@ -64,6 +64,7 @@ def seed_database(db: Session) -> bool:
     default_sources = [
         ("house", "House Stock Watcher"),
         ("senate", "Senate Stock Watcher"),
+        ("executive", "Executive Branch (OGE)"),
         ("quiver", "Quiver Quantitative"),
         ("sec13f", "SEC 13F (Superinvestors)"),
         ("sec13d", "SEC 13D (Activist Investors)"),

@@ -18,6 +18,22 @@ from app.config import settings
 
 logger = logging.getLogger("ainsider.fetcher")
 
+def fetch_wikipedia_photo(name: str) -> Optional[str]:
+    """Attempt to fetch a 300px thumbnail from Wikipedia for a person's name."""
+    try:
+        url = f"https://en.wikipedia.org/w/api.php?action=query&titles={name.replace(' ', '%20')}&prop=pageimages&format=json&pithumbsize=300"
+        # Must include User-Agent with email per Wikimedia policy
+        headers = {'User-Agent': 'AInsiderTrackerBot/1.0 (admin@ainsidertracker.com)'}
+        resp = httpx.get(url, headers=headers, timeout=5.0)
+        if resp.status_code == 200:
+            pages = resp.json().get("query", {}).get("pages", {})
+            for _, page in pages.items():
+                if "thumbnail" in page:
+                    return page["thumbnail"].get("source")
+    except Exception as e:
+        logger.debug(f"Could not fetch Wikipedia photo for {name}: {e}")
+    return None
+
 
 @dataclass
 class RawTrade:
@@ -137,6 +153,83 @@ class HouseStockWatcherProvider(BaseDataSourceProvider):
         logger.info(f"HouseStockWatcher: Parsed {len(trades)} valid trades")
         return trades
 
+
+
+class ExecutiveBranchProvider(BaseDataSourceProvider):
+    """Fetches Executive Branch (OGE Form 278-T) trades from Kadoa dataset."""
+    
+    URL = "https://congress.kadoa.com/data/trades.json"
+
+    def fetch_trades(self, limit: int = 5000) -> List[RawTrade]:
+        trades = []
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            resp = httpx.get(self.URL, headers=headers, timeout=30.0)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            # Filter for executive branch or OGE
+            data = [item for item in data if item.get("branch") == "executive" or "executive" in str(item.get("agency", "")).lower()]
+            logger.info(f"ExecutiveBranch: Loaded {len(data)} total records from Kadoa dataset")
+            
+            for item in data:
+                try:
+                    ticker = item.get("ticker", "").strip()
+                    if not ticker or ticker == "--" or len(ticker) > 10:
+                        continue
+                        
+                    t_date_str = item.get("transaction_date")
+                    if not t_date_str:
+                        continue
+                        
+                    try:
+                        td = date.fromisoformat(t_date_str)
+                    except ValueError:
+                        continue
+                        
+                    trade_type_raw = (item.get("type") or item.get("transaction_type", "")).upper()
+                    if "PURCHASE" in trade_type_raw or "BUY" in trade_type_raw:
+                        trade_type = "BUY"
+                    elif "SALE" in trade_type_raw or "SELL" in trade_type_raw:
+                        trade_type = "SELL"
+                    else:
+                        continue
+                        
+                    representative = (
+                        item.get("filer_name") or
+                        "Unknown"
+                    )
+                    
+                    agency = item.get("agency") or "Executive Branch"
+                    
+                    trade = RawTrade(
+                        person_name=representative,
+                        person_category="Executive Branch",
+                        committees=[agency],
+                        ticker=ticker,
+                        trade_type=trade_type,
+                        amount_range=item.get("amount") or item.get("amount_range_label") or "$1,001-$15,000",
+                        trade_date=td,
+                        filing_date=date.fromisoformat(item["filing_date"]) if item.get("filing_date") else None,
+                        source_url=item.get("doc_url") or "",
+                    )
+                    trades.append(trade)
+                except Exception as e:
+                    logger.debug(f"ExecutiveBranch: Skipping malformed trade entry: {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"ExecutiveBranch: Fetch failed: {e}")
+            try:
+                from app.routers.system import add_log
+                add_log("ERROR", f"Executive Branch Data Source failed: {e}")
+            except Exception:
+                pass
+                
+        logger.info(f"ExecutiveBranch: Parsed {len(trades)} valid trades")
+        return trades
 
 class SenateStockWatcherProvider(BaseDataSourceProvider):
     """Fetches ALL historical Senate trades from the senate-stock-watcher-data GitHub archive.
@@ -835,6 +928,7 @@ class DirectorsDealingsProvider(BaseDataSourceProvider):
 PROVIDER_CLASSES = {
     "house": HouseStockWatcherProvider,
     "senate": SenateStockWatcherProvider,
+    "executive": ExecutiveBranchProvider,
     "quiver": QuiverQuantProvider,
     "sec13f": SEC13FProvider,
     "sec13d": SEC13DProvider,

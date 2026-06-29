@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import TargetPerson, Trade, Subscription
-from app.services.fetcher import fetch_trades, RawTrade
+from app.services.fetcher import fetch_trades, RawTrade, fetch_wikipedia_photo
 from app.services.llm_provider import evaluate_trade
 
 from app.services.notifier import notify_all_enabled
@@ -32,6 +32,7 @@ def _get_or_create_person(db: Session, raw: RawTrade) -> TargetPerson:
             name=raw.person_name,
             category=raw.person_category,
             committee_affiliations=raw.committees,
+            photo_url=fetch_wikipedia_photo(raw.person_name),
             is_tracked=False,  # Auto-created persons from feed start as available (untracked)
             is_active=True,
         )

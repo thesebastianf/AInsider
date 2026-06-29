@@ -94,7 +94,7 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
         )}
         
         <div className="flex justify-between items-start mb-3 relative z-10 gap-2">
-          <div className="flex gap-4">
+          <div className="flex gap-4 min-w-0 flex-1">
             <div className="w-14 h-14 rounded-full overflow-hidden bg-surface-2 border-2 border-border shrink-0 flex items-center justify-center">
               {person.photo_url && !imgError ? (
                 <img 
@@ -113,11 +113,12 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
               )}
             </div>
             
-            <div>
-              <h3 className="text-lg font-bold leading-tight flex flex-wrap items-center gap-1.5"
+            <div className="min-w-0 flex-1">
+              <h3 className="text-lg font-bold leading-tight flex items-center gap-1.5 min-w-0"
                 style={{ color: 'var(--text-bright)' }}
+                title={person.name}
               >
-                {person.name}
+                <span className="truncate">{person.name}</span>
                 {!person.is_active && (
                   <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-red-500/15 text-red-500 border border-red-500/20 uppercase tracking-wider shrink-0">
                     Retired
@@ -275,7 +276,7 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
               {loading ? (
                 <div className="flex flex-col items-center justify-center py-12 gap-2 text-slate-500">
                   <Loader2 className="animate-spin" size={24} />
