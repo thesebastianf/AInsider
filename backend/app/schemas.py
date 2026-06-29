@@ -218,6 +218,7 @@ class SystemStats(BaseModel):
     next_pipeline_run: Optional[datetime] = None
     last_price_update: Optional[datetime] = None
     next_price_update: Optional[datetime] = None
+    next_backup_run: Optional[datetime] = None
     api_status: str = "online"
     db_status: str = "connected"
     llm_status: str = "unknown"

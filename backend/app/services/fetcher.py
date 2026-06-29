@@ -301,23 +301,19 @@ class SEC13FProvider(BaseDataSourceProvider):
             index_resp = httpx.get(index_url, headers=self.HEADERS, timeout=15.0)
             
             # Find the infotable XML link
-            import re
-            xml_match = re.search(
-                r'href="(/Archives/edgar/data/[^"]+(?:infotable|primary_doc)[^"]*\.xml)"',
-                index_resp.text,
-                re.IGNORECASE
-            )
-            if not xml_match:
-                # Try any XML that isn't the form XML wrapper
-                xml_match = re.search(
-                    r'href="(/Archives/edgar/data/[^"]+\.xml)"',
-                    index_resp.text
-                )
-            if not xml_match:
+            xml_links = re.findall(r'href="(/Archives/edgar/data/[^"]+\.xml)"', index_resp.text, re.IGNORECASE)
+            valid_xmls = [l for l in xml_links if 'xsl' not in l.lower()]
+            infotable_links = [l for l in valid_xmls if 'primary_doc.xml' not in l.lower()]
+            
+            if infotable_links:
+                xml_match_url = infotable_links[0]
+            elif valid_xmls:
+                xml_match_url = valid_xmls[0]
+            else:
                 logger.warning(f"SEC13F: Could not find infotable XML for {entity_name}")
                 return []
             
-            xml_url = "https://www.sec.gov" + xml_match.group(1)
+            xml_url = "https://www.sec.gov" + xml_match_url
             time.sleep(0.5)
             xml_resp = httpx.get(xml_url, headers=self.HEADERS, timeout=15.0)
             xml_resp.raise_for_status()
@@ -434,7 +430,7 @@ class SEC13FProvider(BaseDataSourceProvider):
 class SECForm4Provider(BaseDataSourceProvider):
     """Fetches real insider trades from SEC EDGAR Form 4 filings."""
     
-    URL = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&output=atom"
+    URL = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&output=atom&count=100"
 
     def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
         trades = []
@@ -462,18 +458,12 @@ class SECForm4Provider(BaseDataSourceProvider):
                         continue
                         
                     title = title_elem.text or ""
+                    if not (title.startswith("4 -") or title.startswith("4/A -")):
+                        continue
+                        
                     index_url = link_elem.attrib.get("href", "")
                     if not index_url:
                         continue
-                        
-                    # Parse owner name and issuer company from title:
-                    # e.g., "4 - Musk Elon (0001315535) (Subject) / TESLA, INC. (0001318605) (Issuer)"
-                    match = re.search(r"4\s*-\s*([^(]+)\s*\(.*Subject\)\s*/\s*([^(]+)", title)
-                    if not match:
-                        continue
-                        
-                    owner_name = match.group(1).strip()
-                    company_name = match.group(2).strip()
                     
                     # 1. Fetch HTML index page to find the XML URL
                     index_resp = httpx.get(index_url, headers=headers, timeout=10.0)
@@ -481,11 +471,12 @@ class SECForm4Provider(BaseDataSourceProvider):
                         continue
                         
                     # Find xml href (e.g. href="/Archives/edgar/data/1318605/000191234524012345/form4.xml")
-                    xml_match = re.search(r'href="(/Archives/edgar/data/[^"]+\.xml)"', index_resp.text)
-                    if not xml_match:
+                    xml_links = re.findall(r'href="(/Archives/edgar/data/[^"]+\.xml)"', index_resp.text)
+                    valid_xmls = [l for l in xml_links if 'xsl' not in l.lower()]
+                    if not valid_xmls:
                         continue
                         
-                    xml_url = "https://www.sec.gov" + xml_match.group(1)
+                    xml_url = "https://www.sec.gov" + valid_xmls[0]
                     
                     # 2. Fetch the XML document
                     xml_resp = httpx.get(xml_url, headers=headers, timeout=10.0)
@@ -494,18 +485,25 @@ class SECForm4Provider(BaseDataSourceProvider):
                         
                     xml_root = ET.fromstring(xml_resp.content)
                     
+                    # Parse Owner and Company from XML directly
+                    owner_elem = xml_root.find(".//reportingOwner/reportingOwnerId/rptOwnerName")
+                    owner_name = owner_elem.text.strip() if (owner_elem is not None and owner_elem.text) else "Unknown Insider"
+                    
+                    company_elem = xml_root.find(".//issuer/issuerName")
+                    company_name = company_elem.text.strip() if (company_elem is not None and company_elem.text) else "Unknown Company"
+                    
                     # 3. Parse Ticker Symbol
-                    ticker_elem = xml_root.find(".//issuerTradingSymbol")
+                    ticker_elem = xml_root.find(".//issuer/issuerTradingSymbol")
                     if ticker_elem is None or not ticker_elem.text:
                         continue
                     ticker = ticker_elem.text.strip().upper()
                     
                     # 4. Parse Corporate Title
-                    title_elem = xml_root.find(".//officerTitle")
+                    title_elem = xml_root.find(".//reportingOwner/reportingOwnerRelationship/officerTitle")
                     corporate_title = title_elem.text.strip() if (title_elem is not None and title_elem.text) else "Insider"
                     
                     # 5. Parse first transaction (non-derivative)
-                    trans = xml_root.find(".//nonDerivativeTransaction")
+                    trans = xml_root.find(".//nonDerivativeTable/nonDerivativeTransaction")
                     if trans is None:
                         continue
                         

@@ -9,35 +9,22 @@ import { Plus } from 'lucide-react';
 export default function PortfoliosTab() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
+  const [sortBy, setSortBy] = useState('name');
   const [showAdd, setShowAdd] = useState(false);
   
-  // Available Selector vs Custom Mode
-  const [isCustomMode, setIsCustomMode] = useState(false);
-  const [availablePersons, setAvailablePersons] = useState([]);
-  const [selectedAvailableId, setSelectedAvailableId] = useState('');
   const [form, setForm] = useState({ name: '', category: 'Congress', description: '', photo_url: '' });
 
   const fetchPersons = useCallback(() => {
     const params = {};
     if (search) params.search = search;
     if (category !== 'All') params.category = category;
+    if (sortBy !== 'name') params.sort_by = sortBy;
     return getPersons(params);
-  }, [search, category]);
+  }, [search, category, sortBy]);
 
-  const { data: personsData, loading, error, refetch } = useApi(fetchPersons, [search, category]);
+  const { data: personsData, loading, error, refetch } = useApi(fetchPersons, [search, category, sortBy]);
   const { data: perfData } = useApi(getAllPerformance, []);
   const { data: insights } = useApi(getInsights, []);
-
-  // Fetch available (untracked) persons when "+" menu is opened
-  useEffect(() => {
-    if (showAdd) {
-      getAvailablePersons()
-        .then(data => {
-          setAvailablePersons(data.persons || []);
-        })
-        .catch(err => console.error('Failed to load available persons:', err));
-    }
-  }, [showAdd]);
 
   // Build performance lookup
   const perfMap = {};
@@ -87,18 +74,6 @@ export default function PortfoliosTab() {
       refetch();
     } catch (err) {
       alert(err.message || 'Failed to track custom person');
-    }
-  };
-
-  const handleTrackAvailable = async () => {
-    if (!selectedAvailableId) return;
-    try {
-      await trackPerson(selectedAvailableId, true);
-      setShowAdd(false);
-      setSelectedAvailableId('');
-      refetch();
-    } catch (err) {
-      alert(err.message || 'Failed to track person');
     }
   };
 
@@ -185,9 +160,24 @@ export default function PortfoliosTab() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 pr-5">
-        <div className="flex-1">
-          <SearchBar onSearch={setSearch} />
+      {/* Filter and Search Bar */}
+      <div className="px-5 mt-3 flex items-start gap-2 relative z-30">
+        <div className="flex-1 space-y-3">
+          <CategoryPills active={category} onChange={setCategory} />
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <SearchBar onSearch={setSearch} />
+            </div>
+            <select 
+              value={sortBy} 
+              onChange={e => setSortBy(e.target.value)}
+              className="px-3 py-2 bg-slate-900/50 dark:bg-slate-950/50 border border-slate-700/50 rounded-xl text-xs text-slate-300 outline-none focus:border-cyan-500/50 appearance-none"
+            >
+              <option value="name">Sort by Name</option>
+              <option value="trade_count">Most Trades</option>
+              <option value="performance">Best Performance</option>
+            </select>
+          </div>
         </div>
         <button onClick={() => setShowAdd(!showAdd)} title="Track New Person"
           className="p-2.5 bg-slate-800/80 dark:bg-slate-800/80 border border-slate-700/50 hover:bg-slate-700 rounded-xl mt-3 flex items-center justify-center shrink-0 transition-colors">
@@ -198,76 +188,42 @@ export default function PortfoliosTab() {
       {showAdd && (
         <div className="mx-5 mb-4 glass-card p-4 space-y-3 animate-slide-up relative z-20">
           <div className="flex justify-between items-center pb-1">
-            <h3 className="text-xs font-semibold text-slate-200 dark:text-slate-100">Track New Portfolio</h3>
+            <h3 className="text-xs font-semibold text-slate-200 dark:text-slate-100">Track Custom Portfolio</h3>
             <button 
-              onClick={() => {
-                setIsCustomMode(!isCustomMode);
-                setForm({ name: '', category: 'Congress', description: '', photo_url: '' });
-                setSelectedAvailableId('');
-              }}
-              className="text-[10px] text-cyan-400 hover:text-cyan-300 font-semibold underline"
+              onClick={() => setShowAdd(false)}
+              className="text-[10px] text-slate-400 hover:text-slate-300 font-semibold"
             >
-              {isCustomMode ? 'Choose Discovered' : 'Add Custom'}
+              Cancel
             </button>
           </div>
 
-          {!isCustomMode ? (
-            <div className="space-y-3">
-              <p className="text-[10px] text-slate-500">
-                Select a representative/senator discovered in active feeds:
-              </p>
-              <select 
-                value={selectedAvailableId} 
-                onChange={e => {
-                  const id = e.target.value;
-                  setSelectedAvailableId(id);
-                  const p = availablePersons.find(x => x.id === parseInt(id));
-                  if (p) setForm({ name: p.name, category: p.category, description: p.description || '', photo_url: p.photo_url || '' });
-                }}
-                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 dark:bg-slate-950 border border-slate-700/50 text-xs text-slate-200 dark:text-slate-300 outline-none focus:border-blue-500/50"
-              >
-                <option value="">-- Select a discovered person --</option>
-                {availablePersons.map(p => (
-                  <option key={p.id} value={p.id}>{p.name} ({p.category})</option>
-                ))}
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <input placeholder="Name (e.g. Warren Buffett)" value={form.name} 
+                onChange={e => setForm(f => ({...f, name: e.target.value}))} 
+                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 dark:bg-slate-950 border border-slate-700/50 text-xs text-slate-200 dark:text-slate-300 outline-none focus:border-blue-500/50" />
+              <select value={form.category} 
+                onChange={e => setForm(f => ({...f, category: e.target.value}))} 
+                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 dark:bg-slate-950 border border-slate-700/50 text-xs text-slate-200 dark:text-slate-300 outline-none focus:border-blue-500/50">
+                <option value="Congress">Congress</option>
+                <option value="Senate">Senate</option>
+                <option value="Fund Manager">Fund Manager</option>
+                <option value="Corporate Insider">Corporate Insider</option>
               </select>
-              {selectedAvailableId && (
-                <button onClick={handleTrackAvailable} 
-                  className="w-full py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors">
-                  Start Tracking {form.name}
-                </button>
-              )}
             </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <input placeholder="Name (e.g. Warren Buffett)" value={form.name} 
-                  onChange={e => setForm(f => ({...f, name: e.target.value}))} 
-                  className="w-full px-3 py-2 rounded-lg bg-slate-900/80 dark:bg-slate-950 border border-slate-700/50 text-xs text-slate-200 dark:text-slate-300 outline-none focus:border-blue-500/50" />
-                <select value={form.category} 
-                  onChange={e => setForm(f => ({...f, category: e.target.value}))} 
-                  className="w-full px-3 py-2 rounded-lg bg-slate-900/80 dark:bg-slate-950 border border-slate-700/50 text-xs text-slate-200 dark:text-slate-300 outline-none focus:border-blue-500/50">
-                  <option value="Congress">Congress</option>
-                  <option value="Senate">Senate</option>
-                  <option value="Fund Manager">Fund Manager</option>
-                </select>
-              </div>
-              <input placeholder="Ausrichtung / Beschreibung" value={form.description} 
-                onChange={e => setForm(f => ({...f, description: e.target.value}))} 
-                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 dark:bg-slate-950 border border-slate-700/50 text-xs text-slate-200 dark:text-slate-300 outline-none focus:border-blue-500/50" />
-              <input placeholder="Foto URL (optional)" value={form.photo_url} 
-                onChange={e => setForm(f => ({...f, photo_url: e.target.value}))} 
-                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 dark:bg-slate-950 border border-slate-700/50 text-xs text-slate-200 dark:text-slate-300 outline-none focus:border-blue-500/50" />
-              <button onClick={handleAddCustomPerson} 
-                className="w-full py-2 rounded-lg bg-blue-500 text-white text-xs font-semibold hover:bg-blue-600 transition-colors">
-                Track Custom Person
-              </button>
-            </div>
-          )}
+            <input placeholder="Ausrichtung / Beschreibung" value={form.description} 
+              onChange={e => setForm(f => ({...f, description: e.target.value}))} 
+              className="w-full px-3 py-2 rounded-lg bg-slate-900/80 dark:bg-slate-950 border border-slate-700/50 text-xs text-slate-200 dark:text-slate-300 outline-none focus:border-blue-500/50" />
+            <input placeholder="Foto URL (optional)" value={form.photo_url} 
+              onChange={e => setForm(f => ({...f, photo_url: e.target.value}))} 
+              className="w-full px-3 py-2 rounded-lg bg-slate-900/80 dark:bg-slate-950 border border-slate-700/50 text-xs text-slate-200 dark:text-slate-300 outline-none focus:border-blue-500/50" />
+            <button onClick={handleAddCustomPerson} 
+              className="w-full py-2 rounded-lg bg-blue-500 text-white text-xs font-semibold hover:bg-blue-600 transition-colors">
+              Track Custom Person
+            </button>
+          </div>
         </div>
       )}
-
-      <CategoryPills active={category} onChange={setCategory} />
 
       <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {loading && !personsData ? (

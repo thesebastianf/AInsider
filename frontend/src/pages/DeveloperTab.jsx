@@ -110,6 +110,17 @@ export default function DeveloperTab() {
               </span>
             </div>
           </div>
+
+          {/* Database Backup Status */}
+          <div className="glass-card p-3 space-y-2">
+            <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">Database Backup</span>
+            <div className="flex justify-between items-center text-[11px]">
+              <span className="text-slate-500">Next Scheduled Backup</span>
+              <span className="text-slate-300 font-mono">
+                {stats?.next_backup_run ? new Date(stats.next_backup_run).toLocaleString() : 'Not scheduled'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 

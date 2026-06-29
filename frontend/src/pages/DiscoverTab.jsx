@@ -9,16 +9,18 @@ import { Compass, Loader2 } from 'lucide-react';
 export default function DiscoverTab() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
+  const [sortBy, setSortBy] = useState('name');
   const [trackingId, setTrackingId] = useState(null);
 
   const fetchAvailable = useCallback(() => {
     const params = {};
     if (search) params.search = search;
     if (category !== 'All') params.category = category;
+    if (sortBy !== 'name') params.sort_by = sortBy;
     return getAvailablePersons(params);
-  }, [search, category]);
+  }, [search, category, sortBy]);
 
-  const { data, loading, error, refetch } = useApi(fetchAvailable, [search, category]);
+  const { data, loading, error, refetch } = useApi(fetchAvailable, [search, category, sortBy]);
   const persons = data?.persons || [];
 
   const handleTrack = async (personId) => {
@@ -56,8 +58,20 @@ export default function DiscoverTab() {
 
       {/* Filter and Search Bar */}
       <div className="px-5 mt-3 space-y-3">
-        <SearchBar onSearch={setSearch} placeholder="Search discovered filers..." />
         <CategoryPills active={category} onChange={setCategory} />
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <SearchBar onSearch={setSearch} placeholder="Search discovered filers..." />
+          </div>
+          <select 
+            value={sortBy} 
+            onChange={e => setSortBy(e.target.value)}
+            className="px-3 py-2 bg-slate-900/50 dark:bg-slate-950/50 border border-slate-700/50 rounded-xl text-xs text-slate-300 outline-none focus:border-cyan-500/50 appearance-none"
+          >
+            <option value="name">Sort by Name</option>
+            <option value="trade_count">Most Trades</option>
+          </select>
+        </div>
       </div>
 
       {/* Grid of Discovered Persons */}

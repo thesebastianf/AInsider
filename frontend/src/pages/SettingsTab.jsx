@@ -11,7 +11,7 @@ import {
 } from '../api/client';
 import {
   Brain, Bell, Database, Plus, Trash2, Power, FlaskConical,
-  Check, X, Loader2, ChevronDown, ChevronUp, RefreshCw,
+  Check, X, Loader2, ChevronDown, ChevronUp, RefreshCw, Edit2,
 } from 'lucide-react';
 
 // ═══ Provider Icons ══════════════════════════════════════════
@@ -24,6 +24,7 @@ const PROVIDER_ICONS = {
 function LLMSection() {
   const { data: providers, refetch } = useApi(getLLMProviders, []);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [testing, setTesting] = useState(null);
   const [testResult, setTestResult] = useState(null);
   const [form, setForm] = useState({
@@ -42,10 +43,39 @@ function LLMSection() {
     setForm(f => ({ ...f, provider_type: type, ...preset, name: f.name }));
   };
 
-  const handleAdd = async () => {
+  const handleOpenAdd = () => {
+    setEditingId(null);
+    setForm({ provider_type: 'ollama', name: '', api_url: '', api_key: '', model_name: '' });
+    setShowAdd(!showAdd);
+  };
+
+  const handleOpenEdit = (p) => {
+    setEditingId(p.id);
+    setForm({ 
+      provider_type: p.provider_type, 
+      name: p.name, 
+      api_url: p.api_url, 
+      api_key: '', // leave empty to not overwrite unless user types
+      model_name: p.model_name 
+    });
+    setShowAdd(true);
+  };
+
+  const handleSubmit = async () => {
     if (!form.name || !form.api_url || !form.model_name) return;
-    await createLLMProvider(form);
+    
+    // Omit api_key if it's empty to prevent wiping it out on edit
+    const payload = { ...form };
+    if (!payload.api_key) delete payload.api_key;
+    
+    if (editingId) {
+      await updateLLMProvider(editingId, payload);
+    } else {
+      await createLLMProvider(payload);
+    }
+    
     setShowAdd(false);
+    setEditingId(null);
     setForm({ provider_type: 'ollama', name: '', api_url: '', api_key: '', model_name: '' });
     refetch();
   };
@@ -69,7 +99,7 @@ function LLMSection() {
           <Brain size={16} className="text-purple-400" />
           <span className="text-sm font-semibold text-slate-200">AI / LLM Provider</span>
         </div>
-        <button onClick={() => setShowAdd(!showAdd)}
+        <button onClick={handleOpenAdd}
           className="p-1.5 rounded-lg bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors">
           <Plus size={14} />
         </button>
@@ -95,16 +125,16 @@ function LLMSection() {
             onChange={e => setForm(f => ({ ...f, api_url: e.target.value }))}
             className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
           {form.provider_type !== 'ollama' && (
-            <input placeholder="API Key" type="password" value={form.api_key}
+            <input placeholder={editingId ? "API Key (leave blank to keep current)" : "API Key"} type="password" value={form.api_key || ''}
               onChange={e => setForm(f => ({ ...f, api_key: e.target.value }))}
               className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
           )}
           <input placeholder="Model name" value={form.model_name}
             onChange={e => setForm(f => ({ ...f, model_name: e.target.value }))}
             className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
-          <button onClick={handleAdd}
+          <button onClick={handleSubmit}
             className="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600 transition-colors">
-            Add Provider
+            {editingId ? 'Update Provider' : 'Add Provider'}
           </button>
         </div>
       )}
@@ -128,6 +158,10 @@ function LLMSection() {
             <button onClick={() => handleTest(p.id)} title="Test"
               className="p-1.5 rounded-lg hover:bg-slate-700/50 transition-colors text-slate-400">
               {testing === p.id ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />}
+            </button>
+            <button onClick={() => handleOpenEdit(p)} title="Edit"
+              className="p-1.5 rounded-lg hover:bg-slate-700/50 transition-colors text-slate-400 hover:text-slate-200">
+              <Edit2 size={14} />
             </button>
             {!p.is_active && (
               <button onClick={async () => { await activateLLMProvider(p.id); refetch(); }} title="Activate"
@@ -165,6 +199,7 @@ function NotifySection() {
   const { data: providers, refetch } = useApi(getNotificationProviders, []);
   const { data: fields } = useApi(getNotificationFields, []);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [testing, setTesting] = useState(null);
   const [testResult, setTestResult] = useState(null);
   const [provType, setProvType] = useState('telegram');
@@ -172,15 +207,54 @@ function NotifySection() {
   const [configFields, setConfigFields] = useState({});
 
   useEffect(() => {
-    setConfigFields({});
-  }, [provType]);
+    if (!editingId) setConfigFields({});
+  }, [provType, editingId]);
 
-  const handleAdd = async () => {
-    if (!name) return;
-    await createNotificationProvider({
-      provider_type: provType, name, config_json: configFields,
+  const handleOpenAdd = () => {
+    setEditingId(null);
+    setName('');
+    setConfigFields({});
+    setShowAdd(!showAdd);
+  };
+
+  const handleOpenEdit = (p) => {
+    setEditingId(p.id);
+    setProvType(p.provider_type);
+    setName(p.name);
+    // Don't pre-fill sensitive fields for notification configs, or do, 
+    // but the backend returns them as "********" if sensitive, so we just clear them
+    // to avoid sending "*******" back.
+    const safeConfig = { ...p.config_json };
+    Object.keys(safeConfig).forEach(k => {
+      if ((k.includes('token') || k.includes('key')) && safeConfig[k].includes('***')) {
+        safeConfig[k] = '';
+      }
     });
+    setConfigFields(safeConfig);
+    setShowAdd(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!name) return;
+    
+    // Filter out empty secret fields to avoid overwriting with empty
+    const filteredConfig = { ...configFields };
+    Object.keys(filteredConfig).forEach(k => {
+      if ((k.includes('token') || k.includes('key')) && !filteredConfig[k]) {
+        delete filteredConfig[k];
+      }
+    });
+    
+    const payload = { provider_type: provType, name, config_json: filteredConfig };
+    
+    if (editingId) {
+      await updateNotificationProvider(editingId, payload);
+    } else {
+      await createNotificationProvider(payload);
+    }
+    
     setShowAdd(false);
+    setEditingId(null);
     setName('');
     setConfigFields({});
     refetch();
@@ -211,7 +285,7 @@ function NotifySection() {
           <Bell size={16} className="text-amber-400" />
           <span className="text-sm font-semibold text-slate-200">Notifications</span>
         </div>
-        <button onClick={() => setShowAdd(!showAdd)}
+        <button onClick={handleOpenAdd}
           className="p-1.5 rounded-lg bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors">
           <Plus size={14} />
         </button>
@@ -231,15 +305,18 @@ function NotifySection() {
           </div>
           <input placeholder="Display name" value={name} onChange={e => setName(e.target.value)}
             className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
-          {Object.entries(currentFields).map(([key, label]) => (
-            <input key={key} placeholder={label} value={configFields[key] || ''}
-              onChange={e => setConfigFields(f => ({ ...f, [key]: e.target.value }))}
-              type={key.includes('token') || key.includes('key') ? 'password' : 'text'}
-              className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
-          ))}
-          <button onClick={handleAdd}
+          {Object.entries(currentFields).map(([key, label]) => {
+            const isSecret = key.includes('token') || key.includes('key');
+            return (
+              <input key={key} placeholder={editingId && isSecret ? `${label} (leave blank to keep current)` : label} value={configFields[key] || ''}
+                onChange={e => setConfigFields(f => ({ ...f, [key]: e.target.value }))}
+                type={isSecret ? 'password' : 'text'}
+                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/50 text-sm text-slate-200 outline-none focus:border-blue-500/50" />
+            );
+          })}
+          <button onClick={handleSubmit}
             className="w-full py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600 transition-colors">
-            Add Provider
+            {editingId ? 'Update Provider' : 'Add Provider'}
           </button>
         </div>
       )}
@@ -257,6 +334,10 @@ function NotifySection() {
             <button onClick={() => handleTest(p.id)} title="Test"
               className="p-1.5 rounded-lg hover:bg-slate-700/50 transition-colors text-slate-400">
               {testing === p.id ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />}
+            </button>
+            <button onClick={() => handleOpenEdit(p)} title="Edit"
+              className="p-1.5 rounded-lg hover:bg-slate-700/50 transition-colors text-slate-400 hover:text-slate-200">
+              <Edit2 size={14} />
             </button>
             <button onClick={() => handleToggle(p)} title={p.is_enabled ? 'Disable' : 'Enable'}
               className={`p-1.5 rounded-lg transition-colors ${

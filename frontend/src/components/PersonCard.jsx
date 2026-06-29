@@ -152,7 +152,7 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
                 >
                   <Bell className={`h-3.5 w-3.5 transition-all ${
                     person.is_subscribed 
-                      ? 'text-cyan-500 fill-cyan-500/20 drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]' 
+                      ? 'text-cyan-400 fill-cyan-400/30 drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]' 
                       : 'text-slate-400 dark:text-slate-500'
                   }`} />
                 </button>
@@ -218,14 +218,14 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
 
         {/* Latest Trade Quick Preview */}
         {trade ? (
-          <div className="mt-2.5 p-1.5 bg-surface-2/60 rounded border border-border/40 text-[10px] text-slate-400 flex justify-between items-center relative z-10">
+          <div className="mt-2.5 p-1.5 bg-surface-2/60 rounded border border-border/40 text-[10px] text-slate-300 flex justify-between items-center relative z-10">
             <span className="truncate max-w-[150px]">
               Latest: <span className={trade.type === 'BUY' ? 'text-green-500 font-bold' : 'text-red-500 font-bold'}>{trade.type}</span> {trade.ticker}
             </span>
-            <span className="font-mono text-slate-500 text-[9px]">{new Date(trade.trade_date).toLocaleDateString()}</span>
+            <span className="font-mono text-slate-400 text-[9px]">{new Date(trade.trade_date).toLocaleDateString()}</span>
           </div>
         ) : (
-          <div className="mt-2.5 p-1.5 bg-surface-2/30 rounded border border-border/30 text-[10px] text-slate-500 italic text-center relative z-10">
+          <div className="mt-2.5 p-1.5 bg-surface-2/30 rounded border border-border/30 text-[10px] text-slate-400 italic text-center relative z-10">
             No trades recorded
           </div>
         )}

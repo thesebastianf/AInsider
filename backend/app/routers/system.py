@@ -52,13 +52,21 @@ def get_system_stats(db: Session = Depends(get_db)):
     active_llm = db.query(LLMConfig).filter(LLMConfig.is_active == True).first()  # noqa: E712
     llm_status = "configured" if active_llm else "not configured"
 
-    from app.routers.settings import _runtime_overrides
-    last_run = _runtime_overrides.get("last_pipeline_run")
-    last_price = _runtime_overrides.get("last_price_update")
+    from app.models import DataSourceConfig
+    
+    # Get last pipeline run from max last_fetch across active sources
+    last_run_val = db.query(func.max(DataSourceConfig.last_fetch)).filter(DataSourceConfig.is_enabled == True).scalar()
+    
+    # Get last price update from max last_updated
+    last_price_val = db.query(func.max(AssetPerformance.last_updated)).scalar()
+
+    last_run = last_run_val if last_run_val else None
+    last_price = last_price_val if last_price_val else None
 
     # Fetch next run times from APScheduler instance
     next_pipeline = None
     next_price_update = None
+    next_backup_run = None
     try:
         from app.tasks.scheduler import scheduler
         if scheduler.running:
@@ -68,6 +76,9 @@ def get_system_stats(db: Session = Depends(get_db)):
             price_job = scheduler.get_job("price_update_job")
             if price_job:
                 next_price_update = price_job.next_run_time
+            backup_job = scheduler.get_job("backup_job")
+            if backup_job:
+                next_backup_run = backup_job.next_run_time
     except Exception:
         pass
 
@@ -81,6 +92,7 @@ def get_system_stats(db: Session = Depends(get_db)):
         next_pipeline_run=next_pipeline,
         last_price_update=last_price,
         next_price_update=next_price_update,
+        next_backup_run=next_backup_run,
         api_status="online",
         db_status="connected",
         llm_status=llm_status,

@@ -129,6 +129,7 @@ def get_persons(
     search: Optional[str] = Query(None, description="Search by name"),
     category: Optional[str] = Query(None, description="Filter by category"),
     followed_only: bool = Query(False, description="Only show followed persons"),
+    sort_by: Optional[str] = Query('name', description="Sort by: name, trade_count, performance, recent_trade"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -144,10 +145,27 @@ def get_persons(
         query = query.filter(TargetPerson.is_followed == True)  # noqa: E712
 
     total = query.count()
-    persons = query.order_by(TargetPerson.name).offset(offset).limit(limit).all()
+    persons = query.all()
+
+    # Build response objects first so we can sort by dynamically calculated fields
+    response_persons = [_build_person_response(p, db) for p in persons]
+
+    # Sort
+    if sort_by == 'trade_count':
+        response_persons.sort(key=lambda x: (not x.is_followed, -x.trade_count))
+    elif sort_by == 'performance':
+        response_persons.sort(key=lambda x: (not x.is_followed, -(x.avg_trade_return_pct if x.avg_trade_return_pct is not None else -99999.0)))
+    elif sort_by == 'recent_trade':
+        response_persons.sort(key=lambda x: (not x.is_followed, -(x.latest_trade.trade_date.toordinal()) if x.latest_trade and x.latest_trade.trade_date else 0))
+    else:
+        # Default to name sorting (case insensitive)
+        response_persons.sort(key=lambda x: (not x.is_followed, x.name.lower()))
+
+    # Apply pagination in Python
+    paginated = response_persons[offset:offset + limit]
 
     return PersonList(
-        persons=[_build_person_response(p, db) for p in persons],
+        persons=paginated,
         total=total,
     )
 
@@ -156,6 +174,7 @@ def get_persons(
 def get_available_persons(
     search: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query('name', description="Sort by: name, trade_count, recent_trade"),
     db: Session = Depends(get_db)
 ):
     """Get target persons that are NOT currently tracked (available to be tracked)."""
@@ -166,7 +185,15 @@ def get_available_persons(
         query = query.filter(TargetPerson.category == category)
         
     total = query.count()
-    persons = query.order_by(TargetPerson.name).limit(100).all()
+    
+    if sort_by == 'trade_count':
+        query = query.outerjoin(Trade).group_by(TargetPerson.id).order_by(func.count(Trade.id).desc())
+    elif sort_by == 'recent_trade':
+        query = query.outerjoin(Trade).group_by(TargetPerson.id).order_by(func.max(Trade.trade_date).desc())
+    else:
+        query = query.order_by(TargetPerson.name)
+
+    persons = query.limit(100).all()
     
     return PersonList(
         persons=[_build_person_response(p, db) for p in persons],
