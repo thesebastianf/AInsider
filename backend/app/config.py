@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     SCHEDULER_INTERVAL_MINUTES: int = 30
     PRICE_UPDATE_INTERVAL_MINUTES: int = 15
     LOG_LEVEL: str = "INFO"
+    DEBUG_MODE: bool = False
 
     # ─── Optional Initial Seeding ─────────────────────────────
     SEED_LLM_PROVIDER: str | None = None

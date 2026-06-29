@@ -16,11 +16,33 @@ from app.config import settings
 from app.database import SessionLocal
 
 # ─── Logging Setup ────────────────────────────────────────────
+import os
+from logging.handlers import RotatingFileHandler
+
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL, logging.INFO),
     format="%(asctime)s %(levelname)-5s [%(name)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+if settings.DEBUG_MODE:
+    # Use Docker mount if exists, else project local
+    log_dir = Path("/app/logs") if Path("/app").exists() else Path(__file__).parent.parent.parent / "logs"
+    os.makedirs(log_dir, exist_ok=True)
+    
+    file_handler = RotatingFileHandler(
+        log_dir / "ainsider_debug.log",
+        maxBytes=10*1024*1024,
+        backupCount=3,
+        encoding="utf-8"
+    )
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-5s [%(name)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Add handler to root logger so we capture everything
+    logging.getLogger().addHandler(file_handler)
+    logging.getLogger().setLevel(logging.DEBUG)
+
 logger = logging.getLogger("ainsider")
 
 # Path to built frontend assets
