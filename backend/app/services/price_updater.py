@@ -89,61 +89,62 @@ def _make_intercepting_session():
     """
     Returns a curl_cffi Session that perfectly mimics Google Chrome to bypass 
     Yahoo's TLS fingerprinting, preventing 429 errors on the getcrumb endpoint.
-    It also intercepts 429s as a fallback.
+    It also intercepts 429s as a fallback and implements a custom RequestsCookieJar
+    wrapper to completely bypass bugs in curl_cffi's internal cookie handling.
     """
     from curl_cffi import requests as cffi_requests
     from requests.cookies import RequestsCookieJar
+    from http.cookies import SimpleCookie
     
     class _429RaisingSession(cffi_requests.Session):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._my_cookie_jar = RequestsCookieJar()
+
         def request(self, method, url, **kwargs):
+            # Extract cookies from our safe RequestsCookieJar
+            cookie_dict = {}
+            for cookie in self._my_cookie_jar:
+                cookie_dict[cookie.name] = cookie.value
+                
+            # Merge with cookies passed in kwargs (if any)
+            passed_cookies = kwargs.pop("cookies", None)
+            if passed_cookies:
+                if hasattr(passed_cookies, "items"):
+                    cookie_dict.update(passed_cookies.items())
+                else:
+                    cookie_dict.update(passed_cookies)
+                    
+            kwargs["cookies"] = cookie_dict
+            
             response = super().request(method, url, **kwargs)
             if response.status_code == 429:
                 raise RuntimeError(
                     f"YAHOO_429: rate limited on {url[:80]}"
                 )
             
-            # Wrap response.cookies so it yields Cookie objects instead of strings
-            jar = RequestsCookieJar()
-            for k, v in response.cookies.items():
-                jar.set(k, v)
-            response.cookies = jar
+            # Extract cookies from response headers to avoid curl_cffi CookieConflict
+            for header, val in response.headers.items():
+                if header.lower() == "set-cookie":
+                    try:
+                        c = SimpleCookie()
+                        c.load(val)
+                        for name, morsel in c.items():
+                            self._my_cookie_jar.set(name, morsel.value)
+                    except Exception:
+                        pass
             
+            response.cookies = self._my_cookie_jar
             return response
 
         @property
         def cookies(self):
-            # Convert curl_cffi's dict-based cookies into a RequestsCookieJar
-            # which yfinance expects so it can access cookie.name and cookie.value
-            jar = RequestsCookieJar()
-            for k, v in self._cookies.items():
-                jar.set(k, v)
-                
-            # Define a proxy jar that writes modifications back to curl_cffi's internal _cookies
-            class SyncedCookieJar(RequestsCookieJar):
-                def __init__(self, parent_cookies, *args, **kwargs):
-                    self._parent_cookies = parent_cookies
-                    super().__init__(*args, **kwargs)
-                
-                def set(self, name, value, **kwargs):
-                    super().set(name, value, **kwargs)
-                    self._parent_cookies[name] = value
-                    
-                def set_cookie(self, cookie):
-                    super().set_cookie(cookie)
-                    self._parent_cookies[cookie.name] = cookie.value
-                    
-                def update(self, other):
-                    super().update(other)
-                    for k, v in other.items():
-                        self._parent_cookies[k] = v
-
-            return SyncedCookieJar(self._cookies)
+            return self._my_cookie_jar
 
         @cookies.setter
         def cookies(self, val):
             if val is not None:
-                for k, v in val.items():
-                    self._cookies[k] = v
+                self._my_cookie_jar = val
 
     # Use impersonation which bypasses Yahoo TLS fingerprinting blocks
     session = _429RaisingSession(impersonate="chrome")
