@@ -92,6 +92,7 @@ def _make_intercepting_session():
     It also intercepts 429s as a fallback.
     """
     from curl_cffi import requests as cffi_requests
+    from requests.cookies import RequestsCookieJar
     
     class _429RaisingSession(cffi_requests.Session):
         def request(self, method, url, **kwargs):
@@ -101,6 +102,41 @@ def _make_intercepting_session():
                     f"YAHOO_429: rate limited on {url[:80]}"
                 )
             return response
+
+        @property
+        def cookies(self):
+            # Convert curl_cffi's dict-based cookies into a RequestsCookieJar
+            # which yfinance expects so it can access cookie.name and cookie.value
+            jar = RequestsCookieJar()
+            for k, v in self._cookies.items():
+                jar.set(k, v)
+                
+            # Define a proxy jar that writes modifications back to curl_cffi's internal _cookies
+            class SyncedCookieJar(RequestsCookieJar):
+                def __init__(self, parent_cookies, *args, **kwargs):
+                    self._parent_cookies = parent_cookies
+                    super().__init__(*args, **kwargs)
+                
+                def set(self, name, value, **kwargs):
+                    super().set(name, value, **kwargs)
+                    self._parent_cookies[name] = value
+                    
+                def set_cookie(self, cookie):
+                    super().set_cookie(cookie)
+                    self._parent_cookies[cookie.name] = cookie.value
+                    
+                def update(self, other):
+                    super().update(other)
+                    for k, v in other.items():
+                        self._parent_cookies[k] = v
+
+            return SyncedCookieJar(self._cookies)
+
+        @cookies.setter
+        def cookies(self, val):
+            if val is not None:
+                for k, v in val.items():
+                    self._cookies[k] = v
 
     # Use impersonation which bypasses Yahoo TLS fingerprinting blocks
     session = _429RaisingSession(impersonate="chrome")
