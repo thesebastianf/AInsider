@@ -440,19 +440,25 @@ function DataSourceSection() {
   const DS_ICONS = { 
     house: '🏛️', 
     senate: '🏛️', 
+    executive: '🏛️',
     quiver: '📈', 
     sec13f: '🏦', 
+    sec13d: '🤝',
     sec_form4: '🏢', 
+    finnhub: '🔌',
     directors_dealings: '🇪🇺',
     social_inverse_cramer: '🤡'
   };
   const DS_URLS = {
     house: 'https://congress.kadoa.com/data/trades.json',
     senate: 'https://raw.githubusercontent.com/timothycarambat/senate-stock-watcher-data/master/aggregate/all_transactions.json',
+    executive: 'https://congress.kadoa.com/data/trades.json (Executive Branch OGE 278)',
     quiver: 'https://api.quiverquant.com (Requires API Key)',
-    sec13f: 'SEC EDGAR (13F RSS Feed / API)',
-    sec_form4: 'https://www.sec.gov/cgi-bin/browse-edgar (Form 4 Atom Feed)',
-    directors_dealings: 'https://www.wallstreet-online.de/rss/nachrichten-directors-dealings.xml',
+    sec13f: 'SEC EDGAR (13F Quarterly Holdings Snapshot)',
+    sec13d: 'SEC EDGAR (13D Activist Investor Filings)',
+    sec_form4: 'https://www.sec.gov/cgi-bin/browse-edgar (Form 4 Insider Transactions)',
+    finnhub: 'https://finnhub.io (Requires API Key)',
+    directors_dealings: 'https://portal.mvp.bafin.de/database/DealingsInfo/ (BaFin MVP Database)',
     social_inverse_cramer: 'CNBC Search RSS Feed (Jim Cramer Mentions)'
   };
 
