@@ -75,12 +75,14 @@ def _build_person_response(person: TargetPerson, db: Session) -> PersonOut:
     first_trade_date = agg.first_date
     last_trade_date  = agg.last_date
 
-    # Calculate average trade return pct based on actual price_at_transaction
+    # Calculate average trade return pct based on actual price_at_transaction (BUY trades only)
     from app.models import AssetPerformance
     avg_return_pct = None
+    win_rate_pct = None
     try:
         trades_for_perf = db.query(Trade).filter(
             Trade.target_person_id == person.id,
+            Trade.type == "BUY",
             Trade.price_at_transaction.isnot(None)
         ).all()
         if trades_for_perf:
@@ -92,6 +94,8 @@ def _build_person_response(person: TargetPerson, db: Session) -> PersonOut:
                     returns.append(ret)
             if returns:
                 avg_return_pct = round(sum(returns) / len(returns), 2)
+                wins = sum(1 for r in returns if r > 0)
+                win_rate_pct = round((wins / len(returns)) * 100, 2)
     except Exception:
         pass
 
@@ -128,6 +132,7 @@ def _build_person_response(person: TargetPerson, db: Session) -> PersonOut:
         first_trade_date=first_trade_date,
         last_trade_date=last_trade_date,
         avg_trade_return_pct=avg_return_pct,
+        win_rate_pct=win_rate_pct,
     )
 
 

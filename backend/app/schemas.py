@@ -69,6 +69,7 @@ class PersonOut(PersonBase):
     first_trade_date: Optional[date] = None
     last_trade_date: Optional[date] = None
     avg_trade_return_pct: Optional[float] = None
+    win_rate_pct: Optional[float] = None
 
     class Config:
         from_attributes = True

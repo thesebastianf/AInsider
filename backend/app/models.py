@@ -78,6 +78,7 @@ class AssetPerformance(Base):
     ticker = Column(String(10), primary_key=True)
     current_price = Column(Float)
     ytd_performance_pct = Column(Float)
+    is_delisted = Column(Boolean, default=False, nullable=False)
     last_updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     def __repr__(self):

@@ -312,6 +312,17 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
           )}
         </div>
 
+        <div className="flex justify-between items-center text-[11px] py-1 border-b border-border/40 relative z-10">
+          <span className="text-slate-500 dark:text-slate-400">Win Rate (BUY)</span>
+          {person.win_rate_pct !== null && person.win_rate_pct !== undefined ? (
+            <span className="font-bold text-slate-300">
+              {person.win_rate_pct}%
+            </span>
+          ) : (
+            <span className="text-slate-600 dark:text-slate-500">N/A</span>
+          )}
+        </div>
+
         {/* Latest Trade Quick Preview */}
         {trade ? (
           <div className="mt-2.5 p-1.5 bg-surface-2/60 rounded border border-border/40 text-[10px] text-slate-300 flex justify-between items-center relative z-10">

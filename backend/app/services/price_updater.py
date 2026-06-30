@@ -200,6 +200,10 @@ def _download_single(ticker: str, session: requests.Session) -> pd.Series:
         logger.error(f"Unexpected error downloading ticker {ticker}: {e}")
         return pd.Series(dtype=float)
     except Exception as e:
+        # Propagate delisted and missing errors so update_all_prices can mark them
+        err_msg = str(e).lower()
+        if "delisted" in err_msg or "missing" in err_msg or "not found" in err_msg:
+            raise
         logger.error(f"yf.download error for {ticker}: {e}")
         return pd.Series(dtype=float)
 
@@ -230,12 +234,15 @@ def update_all_prices() -> None:
         from app.models import TargetPerson
 
         # ── 1. Collect unique tickers (tracked/followed persons only) ──────────
+        # Filter out tickers that have been marked as delisted in the database.
         all_tickers: list[str] = [
             row[0] for row in
             db.query(Trade.ticker)
             .join(TargetPerson, Trade.target_person_id == TargetPerson.id)
+            .outerjoin(AssetPerformance, Trade.ticker == AssetPerformance.ticker)
             .filter(
-                (TargetPerson.is_tracked == True) | (TargetPerson.is_followed == True)
+                ((TargetPerson.is_tracked == True) | (TargetPerson.is_followed == True))
+                & ((AssetPerformance.is_delisted == False) | (AssetPerformance.is_delisted == None))
             )
             .distinct()
             .all()
@@ -294,13 +301,36 @@ def update_all_prices() -> None:
                         logger.error(f"Error for {ticker}: {e}")
                         break
                 except Exception as e:
-                    logger.error(f"Error for {ticker}: {e}")
-                    break
+                    # Catch delisted errors to avoid querying them again
+                    err_msg = str(e).lower()
+                    if "delisted" in err_msg or "missing" in err_msg or "not found" in err_msg:
+                        logger.warning(f"Ticker {ticker} appears to be delisted. Flagging in database.")
+                        # Mark as delisted in DB
+                        asset = db.query(AssetPerformance).filter(AssetPerformance.ticker == ticker).first()
+                        if asset:
+                            asset.is_delisted = True
+                        else:
+                            db.add(AssetPerformance(
+                                ticker=ticker,
+                                is_delisted=True,
+                                last_updated=datetime.now()
+                            ))
+                        db.commit()
+                        break
+                    else:
+                        logger.error(f"Error for {ticker}: {e}")
+                        break
                     
             if not success:
-                logger.error(f"Exhausted backoff for {ticker}. Tripping circuit breaker.")
-                _trip_circuit_breaker(db)
-                break
+                # If it failed but wasn't flagged as delisted (e.g. rate limit exhausted)
+                # trip circuit breaker
+                if not success and not (db.query(AssetPerformance).filter(AssetPerformance.ticker == ticker, AssetPerformance.is_delisted == True).first()):
+                    logger.error(f"Exhausted backoff for {ticker}. Tripping circuit breaker.")
+                    _trip_circuit_breaker(db)
+                    break
+                else:
+                    # Skip to next ticker if it was flagged as delisted
+                    continue
 
             with _state_lock:
                 _consecutive_chunk_failures = 0
