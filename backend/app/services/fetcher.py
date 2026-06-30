@@ -47,6 +47,7 @@ class RawTrade:
     trade_date: date
     filing_date: Optional[date] = None
     source_url: Optional[str] = None
+    price_at_transaction: Optional[float] = None
 
 
 class BaseDataSourceProvider(ABC):
@@ -801,13 +802,13 @@ class SECForm4Provider(BaseDataSourceProvider):
         return trades
 
 class DirectorsDealingsProvider(BaseDataSourceProvider):
-    """Fetches and parses real European Directors' Dealings news from Wallstreet Online RSS feed."""
+    """Fetches and parses official German Directors' Dealings directly from BaFin database CSV export."""
     
-    URL = "https://www.wallstreet-online.de/rss/nachrichten-directors-dealings.xml"
+    URL = "https://portal.mvp.bafin.de/database/DealingsInfo/sucheForm.do?meldepflichtigerName=&zeitraum=0&d-4000784-e=1&emittentButton=Suche+Emittent&emittentName=&zeitraumVon=&emittentIsin=&6578706f7274=1&zeitraumBis="
 
-    def fetch_trades(self, limit: int = 20) -> List[RawTrade]:
-        import xml.etree.ElementTree as ET
-        import re
+    def fetch_trades(self, limit: int = 5000) -> List[RawTrade]:
+        import csv
+        import io
         
         trades = []
         try:
@@ -817,112 +818,92 @@ class DirectorsDealingsProvider(BaseDataSourceProvider):
             resp = httpx.get(self.URL, headers=headers, timeout=30.0)
             resp.raise_for_status()
             
-            root = ET.fromstring(resp.content)
-            channel = root.find("channel")
-            if channel is None:
+            content = resp.content.decode("utf-8-sig")
+            reader = csv.reader(io.StringIO(content), delimiter=";")
+            
+            # Read header
+            try:
+                header = next(reader)
+            except StopIteration:
                 return []
                 
-            items = channel.findall("item")
-            recent = items[:100]  # Read up to 100 recent entries to populate the archive
-            
-            for item in recent:
+            # Headers: Emittent;BaFin-ID;ISIN;Meldepflichtiger;Position / Status;Art des Instruments;Art des Geschäfts;Durchschnittspreis;Aggregiertes Volumen;Mitteilungsdatum;Datum des Geschäfts;Ort des Geschäfts;Datum der Aktivierung
+            for row in reader:
+                if len(row) < 11:
+                    continue
+                    
+                company_name = row[0].strip()
+                isin = row[2].strip()
+                manager_name = row[3].strip()
+                trade_type_raw = row[6].strip()
+                price_raw = row[7].strip()
+                volume_raw = row[8].strip()
+                date_raw = row[10].strip()
+                
+                # Filter out transactions that aren't BUY or SELL
+                if trade_type_raw == "Kauf":
+                    trade_type = "BUY"
+                elif trade_type_raw == "Verkauf":
+                    trade_type = "SELL"
+                else:
+                    continue # Skip other transaction types like "Sonstiges"
+                    
+                # Parse date des Geschäfts (DD.MM.YYYY)
                 try:
-                    title = item.find("title").text or ""
-                    # E.g. "EQS-DD: DATRON AG: ...", "DGAP-DD: Rheinmetall AG: ...", "DD: Company: ..."
-                    # Match any string starting with DD tags or ending with -DD or -News before the colon
-                    prefix_match = re.match(r"^([A-Za-z0-9\-]+)(?:-DD|-News|DD)?\s*:", title)
-                    if not prefix_match:
-                        continue
-                        
-                    # Verify it's actually a Directors' Dealings (DD) or related corporate news notification
-                    prefix = prefix_match.group(1).upper()
-                    if not any(x in prefix for x in ["EQS", "DGAP", "DD"]):
-                        continue
+                    t_date = datetime.strptime(date_raw, "%d.%m.%Y").date()
+                except ValueError:
+                    continue
                     
-                    parts = title.split(":")
-                    if len(parts) < 3:
-                        continue
-                        
-                    company_name = parts[1].strip()
-                    rest = ":".join(parts[2:]).strip()
-                    
-                    if "," in rest:
-                        # Extract the name before the first comma to avoid long sentences
-                        manager_name = rest.split(",")[0].strip()
-                    else:
-                        manager_name = rest.strip()
-                        
-                    # Clean up known transaction words if they ended up in the name
-                    for word in [" Kauf", " Verkauf", " Erwerb", " Veräußerung", " Buy", " Sell", 
-                                 " kauf", " verkauf", " erwerb"]:
-                        if manager_name.endswith(word):
-                            manager_name = manager_name[:-len(word)].strip()
-                            
-                    rest_upper = rest.upper()
-                    if "VERKAUF" in rest_upper or "SELL" in rest_upper or "VERÄUSSERUNG" in rest_upper:
-                        trade_type = "SELL"
-                    else:
-                        trade_type = "BUY"
-                        
-                    # Extract ticker from company name (first word uppercase)
-                    ticker = company_name.split()[0].upper()
-                    for suffix in ["AG", "SE", "KGAA", "PLC", "INC", "CORP", "GMBH"]:
-                        if ticker.endswith(suffix):
-                            ticker = ticker[:-len(suffix)]
-                    ticker = "".join(c for c in ticker if c.isalnum())
-                    if not ticker:
-                        ticker = "GERMANY"
-                        
-                    # Parse date
-                    date_element = item.find("{http://purl.org/dc/elements/1.1/}date")
-                    if date_element is not None and date_element.text:
-                        t_date = datetime.fromisoformat(date_element.text.strip()).date()
-                    else:
-                        t_date = date.today()
-                        
-                    # Fetch article content to extract exact volume
-                    link = item.find("link").text or ""
-                    amount_range = "> €50,000"
+                # Parse price_at_transaction (e.g. "954,62 EUR" -> 954.62)
+                price_val = None
+                if price_raw:
+                    price_cleaned = price_raw.split()[0].replace(".", "").replace(",", ".")
                     try:
-                        article_resp = httpx.get(link, headers=headers, timeout=3.0)
-                        if article_resp.status_code == 200:
-                            amounts_raw = re.findall(r"([\d\.,]+)\s*(?:EUR|€)", article_resp.text)
-                            floats = []
-                            for val in amounts_raw:
-                                cleaned = val.replace(".", "").replace(",", ".")
-                                try:
-                                    floats.append(float(cleaned))
-                                except ValueError:
-                                    pass
-                            if floats:
-                                max_val = max(floats)
-                                if max_val >= 1000000:
-                                    amount_range = f"€{max_val / 1000000:.1f}M"
-                                elif max_val >= 1000:
-                                    amount_range = f"€{max_val / 1000:.0f}K"
-                                else:
-                                    amount_range = f"€{max_val:.0f}"
-                    except Exception:
+                        price_val = float(price_cleaned)
+                    except ValueError:
                         pass
                         
-                    trade = RawTrade(
-                        person_name=manager_name,
-                        person_category="Corporate Insider",
-                        committees=[company_name],
-                        ticker=ticker,
-                        trade_type=trade_type,
-                        amount_range=amount_range,
-                        trade_date=t_date,
-                        filing_date=t_date,
-                        source_url=link,
-                    )
-                    trades.append(trade)
-                    logger.info(f"Directors Dealings parsed: {manager_name} ({company_name}) {trade_type} {ticker}")
-                except Exception as e:
-                    logger.warning(f"DirectorsDealingsProvider: Skipping entry: {e}")
-                    continue
+                # Parse volume (e.g. "3.043.314,50 EUR" -> amount_range)
+                amount_range = "€50,000+"
+                if volume_raw:
+                    vol_cleaned = volume_raw.split()[0].replace(".", "").replace(",", ".")
+                    try:
+                        vol_val = float(vol_cleaned)
+                        if vol_val >= 1000000:
+                            amount_range = f"€{vol_val / 1000000:.1f}M"
+                        elif vol_val >= 1000:
+                            amount_range = f"€{vol_val / 1000:.0f}K"
+                        else:
+                            amount_range = f"€{vol_val:.0f}"
+                    except ValueError:
+                        pass
+                        
+                # Extract ticker from company name (first word uppercase)
+                ticker = company_name.split()[0].upper()
+                for suffix in ["AG", "SE", "KGAA", "PLC", "INC", "CORP", "GMBH"]:
+                    if ticker.endswith(suffix):
+                        ticker = ticker[:-len(suffix)]
+                ticker = "".join(c for c in ticker if c.isalnum())
+                if not ticker:
+                    ticker = "GERMANY"
+                    
+                trade = RawTrade(
+                    person_name=manager_name,
+                    person_category="Corporate Insider",
+                    committees=[company_name],
+                    ticker=ticker,
+                    trade_type=trade_type,
+                    amount_range=amount_range,
+                    trade_date=t_date,
+                    filing_date=t_date,
+                    source_url="https://portal.mvp.bafin.de/database/DealingsInfo/",
+                    price_at_transaction=price_val
+                )
+                trades.append(trade)
+                logger.info(f"BaFin Directors Dealings parsed: {manager_name} ({company_name}) {trade_type} {ticker} @ {price_val}")
+                
         except Exception as e:
-            logger.error(f"DirectorsDealingsProvider: Failed to parse feed: {e}")
+            logger.error(f"DirectorsDealingsProvider: Failed to parse BaFin CSV: {e}")
             try:
                 from app.routers.system import add_log
                 add_log("ERROR", f"DirectorsDealingsProvider fetch failed: {str(e)[:150]}")

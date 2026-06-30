@@ -166,8 +166,8 @@ def run_pipeline() -> dict:
                     stats["duplicates"] += 1
                     continue
                     
-                # New trade, resolve price using DataFrame cache
-                trade = _insert_trade(db, person, raw, price_at_transaction=None)
+                # New trade, resolve price using transaction price from raw feed
+                trade = _insert_trade(db, person, raw, price_at_transaction=raw.price_at_transaction)
                 if trade is None:
                     stats["duplicates"] += 1
                     continue
