@@ -30,8 +30,8 @@ from app.database import SessionLocal
 logger = logging.getLogger("ainsider.price_updater")
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-_CHUNK_SIZE = 50           # Smaller chunk size to avoid Yahoo Finance IP blocking
-_INTER_CHUNK_SLEEP = 35    # Longer sleep to respect rate limits
+_FIXED_SLEEP_SEC = 2       # 2s fixed delay between ticker downloads to respect rate limits
+_BACKOFF_DELAYS = [2, 6, 18] # Exponential backoff on 429
 _PAUSE_HOURS = 2           # pause duration on circuit-breaker trip
 
 # ── Circuit-breaker state (in-process, resets on container restart) ────────────
@@ -85,21 +85,26 @@ def _trip_circuit_breaker(db: Session) -> None:
             logger.error(f"Failed to send rate-limit notification: {e}")
 
 
-def _make_intercepting_session() -> requests.Session:
+def _make_intercepting_session():
     """
-    Returns a requests.Session that raises immediately on HTTP 429,
-    preventing yfinance from its internal retry-and-toggle loop.
+    Returns a curl_cffi Session that perfectly mimics Google Chrome to bypass 
+    Yahoo's TLS fingerprinting, preventing 429 errors on the getcrumb endpoint.
+    It also intercepts 429s as a fallback.
     """
-    class _429RaisingSession(requests.Session):
-        def send(self, prepared_request, **kwargs):
-            response = super().send(prepared_request, **kwargs)
+    from curl_cffi import requests as cffi_requests
+    
+    class _429RaisingSession(cffi_requests.Session):
+        def request(self, method, url, **kwargs):
+            response = super().request(method, url, **kwargs)
             if response.status_code == 429:
                 raise RuntimeError(
-                    f"YAHOO_429: rate limited on {prepared_request.url[:80]}"
+                    f"YAHOO_429: rate limited on {url[:80]}"
                 )
             return response
 
-    session = _429RaisingSession()
+    # Use impersonation which bypasses Yahoo TLS fingerprinting blocks
+    session = _429RaisingSession(impersonate="chrome")
+    
     session.headers.update({
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -110,17 +115,14 @@ def _make_intercepting_session() -> requests.Session:
     return session
 
 
-def _download_chunk(tickers: list[str], session: requests.Session) -> pd.DataFrame:
+def _download_single(ticker: str, session: requests.Session) -> pd.Series:
     """
-    Download 5y daily Close prices for a chunk of tickers.
-    Uses yf.download() – one HTTP call for the whole chunk.
-    Returns a DataFrame with columns = ticker symbols, or empty on failure.
+    Download 5y daily Close prices for a single ticker.
     """
-    ticker_str = " ".join(tickers)
     try:
         # Pass our intercepting session so 429s raise immediately
         data = yf.download(
-            ticker_str,
+            ticker,
             period="5y",
             progress=False,
             auto_adjust=False,
@@ -128,35 +130,34 @@ def _download_chunk(tickers: list[str], session: requests.Session) -> pd.DataFra
             session=session,
         )
         if data.empty:
-            return pd.DataFrame()
+            return pd.Series(dtype=float)
 
-        # Multi-ticker download has MultiIndex columns; normalize to just Close
+        # MultiIndex or single index columns
         if isinstance(data.columns, pd.MultiIndex):
             if "Close" in data.columns.get_level_values(0):
+                close = data["Close"].iloc[:, 0]
+            else:
+                return pd.Series(dtype=float)
+        else:
+            if "Close" in data.columns:
                 close = data["Close"]
             else:
-                return pd.DataFrame()
-        else:
-            # Single ticker: columns are Open/High/Low/Close/Volume
-            if "Close" in data.columns:
-                close = data[["Close"]].rename(columns={"Close": tickers[0]})
-            else:
-                return pd.DataFrame()
+                return pd.Series(dtype=float)
 
         # Normalize index (drop tz info, keep date only)
         if hasattr(close.index, "tz") and close.index.tz is not None:
             close.index = close.index.tz_localize(None)
         close.index = close.index.normalize()
-        return close
+        return close.dropna()
 
     except RuntimeError as e:
         if "YAHOO_429" in str(e):
             raise  # let caller handle it
-        logger.error(f"Unexpected error downloading chunk: {e}")
-        return pd.DataFrame()
+        logger.error(f"Unexpected error downloading ticker {ticker}: {e}")
+        return pd.Series(dtype=float)
     except Exception as e:
-        logger.error(f"yf.download error: {e}")
-        return pd.DataFrame()
+        logger.error(f"yf.download error for {ticker}: {e}")
+        return pd.Series(dtype=float)
 
 
 def update_all_prices() -> None:
@@ -205,7 +206,7 @@ def update_all_prices() -> None:
         logger.info(
             f"Price update: {len(tickers)} tickers to update "
             f"({skipped_fresh} already fresh today, {len(all_tickers)} total). "
-            f"Chunks of {_CHUNK_SIZE} = {max(1, -(-len(tickers) // _CHUNK_SIZE))} API calls."
+            f"Processing individually with {_FIXED_SLEEP_SEC}s delay."
         )
 
         if not tickers:
@@ -216,129 +217,117 @@ def update_all_prices() -> None:
         session = _make_intercepting_session()
         total_updated = 0
 
-        # ── 3. Process in chunks ───────────────────────────────────────────────
-        chunks = [tickers[i:i + _CHUNK_SIZE] for i in range(0, len(tickers), _CHUNK_SIZE)]
-
-        for chunk_idx, chunk in enumerate(chunks):
+        # ── 3. Process individually ───────────────────────────────────────────
+        for idx, ticker in enumerate(tickers):
             if _is_rate_limited():
                 logger.info("Circuit-breaker active mid-run. Stopping.")
                 break
 
-            logger.info(
-                f"Chunk {chunk_idx + 1}/{len(chunks)}: "
-                f"downloading {len(chunk)} tickers..."
-            )
+            logger.info(f"Ticker {idx + 1}/{len(tickers)}: downloading {ticker}...")
 
-            try:
-                close_df = _download_chunk(chunk, session)
-            except RuntimeError as e:
-                if "YAHOO_429" in str(e):
-                    logger.warning(f"Yahoo Finance 429 encountered during chunk {chunk_idx + 1}. Tripping circuit breaker immediately.")
-                    _trip_circuit_breaker(db)
+            s = pd.Series(dtype=float)
+            success = False
+            
+            for attempt, delay in enumerate(_BACKOFF_DELAYS):
+                try:
+                    s = _download_single(ticker, session)
+                    success = True
+                    break # Success
+                except RuntimeError as e:
+                    if "YAHOO_429" in str(e):
+                        logger.warning(f"Yahoo 429 on {ticker} (attempt {attempt+1}), backing off for {delay}s...")
+                        time.sleep(delay)
+                    else:
+                        logger.error(f"Error for {ticker}: {e}")
+                        break
+                except Exception as e:
+                    logger.error(f"Error for {ticker}: {e}")
                     break
-                else:
-                    logger.error(f"Chunk {chunk_idx + 1} error: {e}")
-                    continue
-
-            # Empty result = likely rate limited or all tickers invalid
-            if close_df.empty:
-                logger.warning(
-                    f"Empty result for chunk {chunk_idx + 1}. Tripping circuit breaker immediately to prevent block."
-                )
+                    
+            if not success:
+                logger.error(f"Exhausted backoff for {ticker}. Tripping circuit breaker.")
                 _trip_circuit_breaker(db)
                 break
 
-            # Successful chunk → reset failure counter
             with _state_lock:
                 _consecutive_chunk_failures = 0
 
-            # ── 4. Process each ticker in the downloaded chunk ─────────────────
-            for ticker in chunk:
-                try:
-                    # Extract series for this ticker
-                    if ticker in close_df.columns:
-                        s = close_df[ticker].dropna()
-                    elif len(chunk) == 1 and not close_df.empty:
-                        s = close_df.iloc[:, 0].dropna()
-                    else:
-                        continue
+            # ── 4. Process the downloaded series ─────────────────
+            try:
+                if s.empty:
+                    # Still fixed 2s delay after even if empty, to respect rate limits
+                    time.sleep(_FIXED_SLEEP_SEC)
+                    continue
 
-                    if s.empty:
-                        continue
+                current_price = float(s.iloc[-1])
 
-                    current_price = float(s.iloc[-1])
-
-                    # YTD performance
-                    ytd_pct = None
-                    ytd_s = s.loc[year_start:]
-                    if not ytd_s.empty:
-                        start_p = float(ytd_s.iloc[0])
-                        if start_p > 0:
-                            ytd_pct = round(
-                                ((current_price - start_p) / start_p) * 100, 2
-                            )
-
-                    # Upsert AssetPerformance
-                    asset = (
-                        db.query(AssetPerformance)
-                        .filter(AssetPerformance.ticker == ticker)
-                        .first()
-                    )
-                    if asset:
-                        asset.current_price = round(current_price, 2)
-                        asset.ytd_performance_pct = ytd_pct
-                        asset.last_updated = datetime.now()
-                    else:
-                        db.add(AssetPerformance(
-                            ticker=ticker,
-                            current_price=round(current_price, 2),
-                            ytd_performance_pct=ytd_pct,
-                            last_updated=datetime.now(),
-                        ))
-
-                    # Backfill missing price_at_transaction
-                    missing = (
-                        db.query(Trade)
-                        .join(TargetPerson, Trade.target_person_id == TargetPerson.id)
-                        .filter(
-                            Trade.ticker == ticker,
-                            Trade.price_at_transaction == None,
-                            (TargetPerson.is_tracked == True) | (TargetPerson.is_followed == True),
-                        )
-                        .all()
-                    )
-                    backfilled = 0
-                    for trade in missing:
-                        if not trade.trade_date:
-                            continue
-                        t_date = pd.Timestamp(trade.trade_date).normalize()
-                        for offset in range(7):
-                            check = t_date + pd.Timedelta(days=offset)
-                            if check in s.index:
-                                trade.price_at_transaction = float(s.loc[check])
-                                backfilled += 1
-                                break
-
-                    total_updated += 1
-                    if backfilled:
-                        logger.debug(
-                            f"{ticker}: ${current_price:.2f} YTD:{ytd_pct}% "
-                            f"backfilled:{backfilled}"
+                # YTD performance
+                ytd_pct = None
+                ytd_s = s.loc[year_start:]
+                if not ytd_s.empty:
+                    start_p = float(ytd_s.iloc[0])
+                    if start_p > 0:
+                        ytd_pct = round(
+                            ((current_price - start_p) / start_p) * 100, 2
                         )
 
-                except Exception as e:
-                    logger.error(f"Processing {ticker} failed: {e}")
+                # Upsert AssetPerformance
+                asset = (
+                    db.query(AssetPerformance)
+                    .filter(AssetPerformance.ticker == ticker)
+                    .first()
+                )
+                if asset:
+                    asset.current_price = round(current_price, 2)
+                    asset.ytd_performance_pct = ytd_pct
+                    asset.last_updated = datetime.now()
+                else:
+                    db.add(AssetPerformance(
+                        ticker=ticker,
+                        current_price=round(current_price, 2),
+                        ytd_performance_pct=ytd_pct,
+                        last_updated=datetime.now(),
+                    ))
+
+                # Backfill missing price_at_transaction
+                missing = (
+                    db.query(Trade)
+                    .join(TargetPerson, Trade.target_person_id == TargetPerson.id)
+                    .filter(
+                        Trade.ticker == ticker,
+                        Trade.price_at_transaction == None,
+                        (TargetPerson.is_tracked == True) | (TargetPerson.is_followed == True),
+                    )
+                    .all()
+                )
+                backfilled = 0
+                for trade in missing:
+                    if not trade.trade_date:
+                        continue
+                    t_date = pd.Timestamp(trade.trade_date).normalize()
+                    for offset in range(7):
+                        check = t_date + pd.Timedelta(days=offset)
+                        if check in s.index:
+                            trade.price_at_transaction = float(s.loc[check])
+                            backfilled += 1
+                            break
+
+                total_updated += 1
+                if backfilled:
+                    logger.debug(
+                        f"{ticker}: ${current_price:.2f} YTD:{ytd_pct}% "
+                        f"backfilled:{backfilled}"
+                    )
+            except Exception as e:
+                logger.error(f"Processing {ticker} failed: {e}")
 
             db.commit()
-            logger.info(
-                f"Chunk {chunk_idx + 1}/{len(chunks)} done "
-                f"(+{len(chunk)} tickers). Total so far: {total_updated}"
-            )
+            logger.info(f"Processed {ticker}. Total so far: {total_updated}")
 
-            # Sleep between chunks (not after the last one)
-            if chunk_idx < len(chunks) - 1:
-                logger.debug(f"Sleeping {_INTER_CHUNK_SLEEP}s before next chunk…")
-                time.sleep(_INTER_CHUNK_SLEEP)
+            # Sleep between tickers
+            if idx < len(tickers) - 1:
+                logger.debug(f"Sleeping {_FIXED_SLEEP_SEC}s before next ticker…")
+                time.sleep(_FIXED_SLEEP_SEC)
 
         logger.info(
             f"Price update complete. Updated: {total_updated}/{len(tickers)} tickers."
