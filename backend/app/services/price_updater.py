@@ -101,6 +101,13 @@ def _make_intercepting_session():
                 raise RuntimeError(
                     f"YAHOO_429: rate limited on {url[:80]}"
                 )
+            
+            # Wrap response.cookies so it yields Cookie objects instead of strings
+            jar = RequestsCookieJar()
+            for k, v in response.cookies.items():
+                jar.set(k, v)
+            response.cookies = jar
+            
             return response
 
         @property
@@ -202,6 +209,15 @@ def update_all_prices() -> None:
     tracked/followed persons and backfills price_at_transaction.
     """
     global _consecutive_chunk_failures
+
+    # Clear stale cookie cache from database on startup to wipe out the string cookies
+    try:
+        from yfinance import cache
+        cache.get_cookie_cache().store('basic', None)
+        cache.get_cookie_cache().store('csrf', None)
+        logger.info("Cleared yfinance persistent cookie cache.")
+    except Exception as e:
+        logger.debug(f"Failed to clear yfinance cookie cache: {e}")
 
     if _is_rate_limited():
         resume = _rate_limit_until.strftime("%H:%M") if _rate_limit_until else "?"
