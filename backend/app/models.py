@@ -45,7 +45,7 @@ class Trade(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     target_person_id = Column(Integer, ForeignKey("target_persons.id"), nullable=False, index=True)
-    ticker = Column(String(10), nullable=False, index=True)
+    ticker = Column(String(20), nullable=False, index=True)
     type = Column(String(4), nullable=False)  # "BUY" or "SELL"
     amount_range = Column(String(50), nullable=False)  # e.g., "$100k-$250k"
     trade_date = Column(Date, nullable=False)
@@ -75,7 +75,7 @@ class AssetPerformance(Base):
     """Tracks current price and YTD performance for a stock ticker."""
     __tablename__ = "asset_performance"
 
-    ticker = Column(String(10), primary_key=True)
+    ticker = Column(String(20), primary_key=True)
     current_price = Column(Float)
     ytd_performance_pct = Column(Float)
     is_delisted = Column(Boolean, default=False, nullable=False)
