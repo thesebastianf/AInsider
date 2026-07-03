@@ -75,6 +75,10 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
 
   const handleOpenHistory = async (e) => {
     if (showEdit) return; // don't open history when editing
+    if (showHistory) {
+      setShowHistory(false);
+      return;
+    }
     setShowHistory(true);
     setLoading(true);
     try {
