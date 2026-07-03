@@ -205,6 +205,19 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
           <div className="flex items-center gap-1 z-20 shrink-0">
             {person.is_tracked ? (
               <>
+                {/* Follow (Star) Button */}
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onToggleFollow(person.id); }} 
+                  className="p-1.5 bg-surface-2 rounded-full hover:bg-surface-3 transition-colors border border-border"
+                  title={person.is_followed ? "Unstar profile" : "Star profile"}
+                >
+                  <Star className={`h-3.5 w-3.5 transition-all ${
+                    person.is_followed 
+                      ? 'text-amber-500 fill-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]' 
+                      : 'text-slate-400 dark:text-slate-500'
+                  }`} />
+                </button>
+
                 {/* Subscribe Button */}
                 <button 
                   onClick={(e) => { e.stopPropagation(); onToggleSubscribe(person.id); }} 
@@ -325,106 +338,85 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
 
         {/* Latest Trade Quick Preview */}
         {trade ? (
-          <div className="mt-2.5 p-1.5 bg-surface-2/60 rounded border border-border/40 text-[10px] text-slate-300 flex justify-between items-center relative z-10">
-            <span className="truncate max-w-[150px]">
+          <div className="mt-2.5 p-1.5 bg-surface-2/60 hover:bg-surface-3 rounded border border-border/40 text-[10px] text-slate-300 flex justify-between items-center relative z-10 transition-colors">
+            <span className="truncate max-w-[150px] flex items-center gap-1.5">
               Latest: <span className={trade.type === 'BUY' ? 'text-green-500 font-bold' : 'text-red-500 font-bold'}>{trade.type}</span> {trade.ticker}
+              {perf?.is_delisted && (
+                <span className="px-1 py-0.2 rounded text-[7px] bg-red-500/15 text-red-400 border border-red-500/20 uppercase font-bold tracking-wider shrink-0" title="Ticker not found on yfinance or delisted">
+                  Unknown
+                </span>
+              )}
             </span>
-            <span className="font-mono text-slate-400 text-[9px]">{new Date(trade.trade_date).toLocaleDateString()}</span>
+            <span className="text-[9px] text-cyan-500 font-semibold shrink-0">
+              {showHistory ? 'Click to collapse' : 'Click to expand'}
+            </span>
           </div>
         ) : (
           <div className="mt-2.5 p-1.5 bg-surface-2/30 rounded border border-border/30 text-[10px] text-slate-400 italic text-center relative z-10">
             No trades recorded
           </div>
         )}
-      </div>
 
-
-      {/* Trade History Modal */}
-      {showHistory && (
-        <div 
-          onClick={() => setShowHistory(false)}
-          className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl overflow-hidden animate-slide-up"
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/50">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-800 shrink-0 flex items-center justify-center">
-                  {person.photo_url && !imgError ? (
-                    <img 
-                      src={person.photo_url} 
-                      alt={person.name} 
-                      onError={() => setImgError(true)}
-                      className="w-full h-full object-cover" 
-                    />
-                  ) : (
-                    <div 
-                      className="w-full h-full flex items-center justify-center text-xs font-bold text-slate-100 select-none"
-                      style={{ backgroundColor: getAvatarColor(person.name) }}
-                    >
-                      {getInitials(person.name)}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-100 text-sm leading-snug">{person.name}</h4>
-                  <span className="text-[10px] text-cyan-400 font-semibold tracking-wider uppercase font-mono">{person.category}</span>
-                </div>
-              </div>
+        {/* Inline Trade History (Collapsible) */}
+        {showHistory && (
+          <div className="mt-3 pt-3 border-t border-border/40 relative z-10 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Trade History</span>
               <button 
-                onClick={() => setShowHistory(false)}
-                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
+                onClick={(e) => { e.stopPropagation(); setShowHistory(false); }}
+                className="text-[9px] text-cyan-500 hover:underline font-semibold"
               >
-                <X size={16} />
+                Hide
               </button>
             </div>
-
-            {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
               {loading ? (
-                <div className="flex flex-col items-center justify-center py-12 gap-2 text-slate-500">
-                  <Loader2 className="animate-spin" size={24} />
-                  <span className="text-xs">Loading trade history...</span>
+                <div className="flex items-center justify-center py-4 gap-2 text-slate-500">
+                  <Loader2 className="animate-spin" size={14} />
+                  <span className="text-[10px]">Loading trade history...</span>
                 </div>
               ) : trades.length === 0 ? (
-                <div className="text-center py-12 text-slate-500 italic text-xs">
+                <div className="text-center py-4 text-slate-500 italic text-[10px]">
                   No trade history recorded for this person.
                 </div>
               ) : (
                 trades.map((t) => {
                   const details = getTickerDetails(t.ticker);
                   return (
-                    <div key={t.id} className="p-3 bg-slate-950/50 border border-slate-800/60 rounded-xl space-y-2.5 hover:border-slate-700 transition-colors">
-                      <div className="flex items-center justify-between">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    <div key={t.id} className="p-2.5 bg-slate-950/40 border border-border/60 rounded-xl space-y-1.5 hover:border-border transition-colors">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className={`px-1 rounded text-[8px] font-bold ${
                             t.type === 'BUY' ? 'bg-green-500/10 text-green-400 border border-green-500/10' : 'bg-red-500/10 text-red-400 border border-red-500/10'
                           }`}>
                             {t.type}
                           </span>
-                          <span className="text-xs font-bold text-slate-200">{t.ticker}</span>
-                          <span className="text-[10px] text-slate-500 font-medium truncate max-w-[150px]">{details.name}</span>
+                          <span className="font-bold text-slate-200">{t.ticker}</span>
+                          {performance?.[t.ticker]?.is_delisted && (
+                            <span className="px-1 py-0.2 rounded text-[7px] bg-red-500/15 text-red-400 border border-red-500/20 uppercase font-bold tracking-wider shrink-0" title="Ticker not found on yfinance or delisted">
+                              Unknown
+                            </span>
+                          )}
+                          <span className="text-slate-500 truncate max-w-[80px]" title={details.name}>{details.name}</span>
                           
                           {/* Copyable ISIN */}
                           <span 
                             onClick={(e) => handleCopyIsin(e, details.isin)}
                             title="Click to copy ISIN"
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/30 cursor-pointer transition-all font-mono select-none"
+                            className="flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/30 cursor-pointer transition-all font-mono select-none"
                           >
                             {copiedIsin === details.isin ? 'Copied!' : details.isin}
-                            {copiedIsin !== details.isin && <Copy size={8} />}
+                            {copiedIsin !== details.isin && <Copy size={6} />}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-[9px] text-slate-500 font-mono">
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[8px] text-slate-500 font-mono">
                             {new Date(t.trade_date).toLocaleDateString()}
                           </span>
                           {t.source_url && (
                             <a href={t.source_url} target="_blank" rel="noopener noreferrer" 
-                              className="text-cyan-500 hover:text-cyan-400 text-[10px] font-semibold flex items-center hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-cyan-500 hover:text-cyan-400 text-[8px] font-semibold flex items-center hover:underline"
                             >
                               Link ↗
                             </a>
@@ -432,33 +424,33 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
                         </div>
                       </div>
                       
-                      <div className="flex justify-between items-center text-xs">
+                      <div className="flex justify-between items-center text-[10px]">
                         <span className="text-slate-400 font-medium">{t.amount_range}</span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
                           {t.price_at_transaction && (
-                            <span className="text-[10px] text-slate-500 font-mono">
+                            <span className="text-[8px] text-slate-500 font-mono">
                               {t.type === 'BUY' ? 'Bought' : 'Sold'} at ${t.price_at_transaction.toFixed(2)}
                             </span>
                           )}
                           {t.return_since_purchase_pct !== null && t.return_since_purchase_pct !== undefined && (
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${
                               t.return_since_purchase_pct >= 0 ? 'bg-green-500/10 text-green-400 border border-green-500/10' : 'bg-red-500/10 text-red-400 border border-red-500/10'
                             } border`}>
                               {t.return_since_purchase_pct >= 0 ? '+' : ''}{t.return_since_purchase_pct}%
                             </span>
                           )}
                           {t.ai_score && (
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${
                               t.ai_score >= 7 ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/10' : 'bg-slate-800 text-slate-400'
                             }`}>
-                              AI: {t.ai_score}/10
+                              AI: {t.ai_score}
                             </span>
                           )}
                         </div>
                       </div>
                       
                       {t.ai_summary && (
-                        <p className="text-[10px] text-slate-400 leading-relaxed bg-slate-900/60 p-2 rounded-lg border border-slate-800/40">
+                        <p className="text-[9px] text-slate-400 leading-relaxed bg-slate-950/60 p-1.5 rounded-lg border border-border/40">
                           {t.ai_summary}
                         </p>
                       )}
@@ -468,8 +460,8 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
               )}
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ── Delete Confirmation Modal ─────────────────────────── */}
       {showDeleteConfirm && (

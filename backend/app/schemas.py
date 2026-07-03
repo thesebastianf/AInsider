@@ -88,6 +88,7 @@ class AssetPerformanceOut(BaseModel):
     ticker: str
     current_price: Optional[float] = None
     ytd_performance_pct: Optional[float] = None
+    is_delisted: bool = False
     last_updated: Optional[datetime] = None
 
     class Config:

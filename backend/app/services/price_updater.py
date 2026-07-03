@@ -253,6 +253,7 @@ def update_all_prices() -> None:
             return
 
         # ── 2. Skip tickers already updated today (reduces re-run calls) ──────
+        # EXCEPT if there are any tracked/followed trades under that ticker that have missing price_at_transaction!
         today = datetime.now().date()
         already_fresh = {
             row[0] for row in
@@ -260,7 +261,18 @@ def update_all_prices() -> None:
             .filter(AssetPerformance.last_updated >= datetime(today.year, today.month, today.day))
             .all()
         }
-        tickers = [t for t in all_tickers if t not in already_fresh]
+        
+        tickers = []
+        for t in all_tickers:
+            has_missing_prices = db.query(Trade).join(TargetPerson, Trade.target_person_id == TargetPerson.id).filter(
+                Trade.ticker == t,
+                Trade.price_at_transaction == None,
+                ((TargetPerson.is_tracked == True) | (TargetPerson.is_followed == True))
+            ).first() is not None
+            
+            if t not in already_fresh or has_missing_prices:
+                tickers.append(t)
+                
         skipped_fresh = len(all_tickers) - len(tickers)
 
         logger.info(

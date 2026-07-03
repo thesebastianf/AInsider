@@ -3,7 +3,7 @@ AInsider Tracker – Persons Router
 Endpoints for querying target persons, following/unfollowing.
 """
 
-from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
@@ -13,6 +13,7 @@ from pathlib import Path
 from app.database import get_db
 from app.models import TargetPerson, Trade
 from app.schemas import PersonOut, PersonList, TradeOut, PersonBase
+from app.utils.names import normalize_person_name
 
 router = APIRouter(prefix="/api/persons", tags=["Persons"])
 
@@ -20,12 +21,13 @@ router = APIRouter(prefix="/api/persons", tags=["Persons"])
 @router.post("", response_model=PersonOut, status_code=201)
 def create_person(data: PersonBase, db: Session = Depends(get_db)):
     """Manually create a target person to be tracked."""
-    existing = db.query(TargetPerson).filter(TargetPerson.name == data.name).first()
+    normalized_name = normalize_person_name(data.name)
+    existing = db.query(TargetPerson).filter(TargetPerson.name == normalized_name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Person with this name already exists")
     
     person = TargetPerson(
-        name=data.name,
+        name=normalized_name,
         category=data.category,
         committee_affiliations=data.committee_affiliations or [],
         photo_url=data.photo_url,
@@ -216,7 +218,12 @@ def get_available_persons(
 
 
 @router.put("/{person_id}/track")
-def toggle_tracking(person_id: int, is_tracked: bool = Query(True), db: Session = Depends(get_db)):
+def toggle_tracking(
+    person_id: int,
+    is_tracked: bool = Query(True),
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db)
+):
     """Toggle tracking status (is_tracked) for a target person."""
     from app.models import Subscription
     
@@ -236,6 +243,11 @@ def toggle_tracking(person_id: int, is_tracked: bool = Query(True), db: Session 
         if not existing_sub:
             db_sub = Subscription(user_id="default", target_person_id=person.id)
             db.add(db_sub)
+            
+        # Trigger background price update to fetch historical values and calculate returns immediately
+        if background_tasks:
+            from app.services.price_updater import update_all_prices
+            background_tasks.add_task(update_all_prices)
     else:
         if existing_sub:
             db.delete(existing_sub)

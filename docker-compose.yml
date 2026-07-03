@@ -38,12 +38,14 @@ services:
         condition: service_healthy
     volumes:
       - app_logs:/app/logs
+      - app_uploads:/app/uploads
     networks:
       - ainsider-net
 
 volumes:
   pgdata:
   app_logs:
+  app_uploads:
 
 networks:
   ainsider-net:

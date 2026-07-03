@@ -18,27 +18,29 @@ from app.database import SessionLocal
 from app.models import TargetPerson, Trade, Subscription
 from app.services.fetcher import fetch_trades, RawTrade, fetch_wikipedia_photo
 from app.services.llm_provider import evaluate_trade
-
 from app.services.notifier import notify_all_enabled
+from app.utils.names import normalize_person_name
 
 logger = logging.getLogger("ainsider.pipeline")
 
 
 def _get_or_create_person(db: Session, raw: RawTrade) -> TargetPerson:
     """Get existing person or create a new one."""
-    person = db.query(TargetPerson).filter(TargetPerson.name == raw.person_name).first()
+    normalized_name = normalize_person_name(raw.person_name)
+    raw.person_name = normalized_name
+    person = db.query(TargetPerson).filter(TargetPerson.name == normalized_name).first()
     if not person:
         person = TargetPerson(
-            name=raw.person_name,
+            name=normalized_name,
             category=raw.person_category,
             committee_affiliations=raw.committees,
-            photo_url=fetch_wikipedia_photo(raw.person_name),
+            photo_url=fetch_wikipedia_photo(normalized_name),
             is_tracked=False,  # Auto-created persons from feed start as available (untracked)
             is_active=True,
         )
         db.add(person)
         db.flush()
-        logger.info(f"Created available target person: {raw.person_name} ({raw.person_category})")
+        logger.info(f"Created available target person: {normalized_name} ({raw.person_category})")
     return person
 
 

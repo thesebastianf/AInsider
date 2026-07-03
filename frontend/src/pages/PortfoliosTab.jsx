@@ -119,17 +119,27 @@ export default function PortfoliosTab() {
             </div>
           </div>
 
-          {/* Card 3: Hot Stock */}
+          {/* Card 3: Hot Stocks */}
           <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
-            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Hot stock (60d)</span>
-            <div className="flex items-center gap-2 mt-2">
-              <div className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${insights.hot_stock?.perf_pct?.startsWith('+') ? 'bg-green-500/15 text-green-500' : 'bg-red-500/15 text-red-500'} border border-transparent`}>
-                {insights.hot_stock?.ticker}
-              </div>
-              <div className="min-w-0">
-                <div className={`text-xs font-bold ${insights.hot_stock?.perf_pct?.startsWith('+') ? 'text-green-500' : 'text-red-500'}`}>{insights.hot_stock?.perf_pct}</div>
-                <div className="text-[10px] text-slate-500">{insights.hot_stock?.trades_count} trades · 60d</div>
-              </div>
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Hot stocks (60d)</span>
+            <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
+              {insights.hot_stocks && insights.hot_stocks.slice(0, 3).map((stock, idx) => (
+                <div key={stock.ticker} className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[9px] text-slate-500 font-mono">#{idx+1}</span>
+                    <span className="font-bold text-slate-200 truncate">{stock.ticker}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 text-right">
+                    <span className={`font-semibold ${stock.perf_pct?.startsWith('+') ? 'text-green-500' : stock.perf_pct?.startsWith('-') ? 'text-red-500' : 'text-slate-400'}`}>
+                      {stock.perf_pct}
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-medium">({stock.trades_count}t)</span>
+                  </div>
+                </div>
+              ))}
+              {(!insights.hot_stocks || insights.hot_stocks.length === 0) && (
+                <div className="text-[10px] text-slate-500 italic">No recent trades</div>
+              )}
             </div>
           </div>
 
@@ -265,8 +275,8 @@ export default function PortfoliosTab() {
         ) : (
           [...(personsData?.persons || [])]
             .sort((a, b) => {
-              if (a.is_subscribed && !b.is_subscribed) return -1;
-              if (!a.is_subscribed && b.is_subscribed) return 1;
+              if (a.is_followed && !b.is_followed) return -1;
+              if (!a.is_followed && b.is_followed) return 1;
               return a.name.localeCompare(b.name);
             })
             .map((person, i) => (

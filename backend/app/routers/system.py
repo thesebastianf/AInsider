@@ -154,6 +154,45 @@ def trigger_price_update():
         return {"status": "error", "message": str(e)}
 
 
+def parse_amount_to_float(val_str: str) -> float:
+    if not val_str:
+        return 0.0
+    val_str = val_str.strip()
+    
+    # Discard shares counts in parentheses
+    if "(" in val_str:
+        val_str = val_str.split("(")[0].strip()
+        
+    # Take upper range boundary if applicable
+    if "-" in val_str:
+        val_str = val_str.split("-")[-1].strip()
+        
+    val_str_upper = val_str.upper()
+    multiplier = 1.0
+    if "M" in val_str_upper:
+        multiplier = 1_000_000.0
+        val_str = val_str_upper.replace("M", "")
+    elif "K" in val_str_upper:
+        multiplier = 1_000.0
+        val_str = val_str_upper.replace("K", "")
+    elif "B" in val_str_upper:
+        multiplier = 1_000_000_000.0
+        val_str = val_str_upper.replace("B", "")
+        
+    cleaned_chars = []
+    for c in val_str:
+        if c.isdigit() or c == ".":
+            cleaned_chars.append(c)
+            
+    cleaned_str = "".join(cleaned_chars)
+    if not cleaned_str:
+        return 0.0
+    try:
+        return float(cleaned_str) * multiplier
+    except ValueError:
+        return 0.0
+
+
 @router.get("/system/insights")
 def get_insights(db: Session = Depends(get_db)):
     """Calculate and return congressional trading platform insights."""
@@ -219,6 +258,7 @@ def get_insights(db: Session = Depends(get_db)):
         }
 
     # 3. Hot Stock (60d)
+    hot_stocks = []
     hot_stock = None
     try:
         sixty_days_ago = date.today() - timedelta(days=60)
@@ -227,17 +267,19 @@ def get_insights(db: Session = Depends(get_db)):
             .filter(Trade.trade_date >= sixty_days_ago)
             .group_by(Trade.ticker)
             .order_by(func.count(Trade.id).desc())
-            .first()
+            .limit(5)
+            .all()
         )
-        if hot_q:
-            tick, cnt = hot_q
+        for tick, cnt in hot_q:
             ap = db.query(AssetPerformance).filter(AssetPerformance.ticker == tick).first()
             perf_pct = ap.ytd_performance_pct if ap else 0.0
-            hot_stock = {
+            hot_stocks.append({
                 "ticker": tick,
                 "perf_pct": f"{perf_pct:+.1f}%" if perf_pct else "0.0%",
                 "trades_count": cnt
-            }
+            })
+        if hot_stocks:
+            hot_stock = hot_stocks[0]
     except Exception:
         pass
         
@@ -247,6 +289,8 @@ def get_insights(db: Session = Depends(get_db)):
             "perf_pct": "N/A",
             "trades_count": 0
         }
+    if not hot_stocks:
+        hot_stocks = [hot_stock]
 
     # 4. Disclosure Lag
     disclosure_lag = {
@@ -282,8 +326,7 @@ def get_insights(db: Session = Depends(get_db)):
         best_t = None
         for t in all_trades:
             val_str = t.amount_range or ""
-            clean = "".join(c for c in val_str.split("-")[-1] if c.isdigit())
-            val = float(clean) if clean else 0
+            val = parse_amount_to_float(val_str)
             if val > max_val:
                 max_val = val
                 best_t = t
@@ -318,6 +361,7 @@ def get_insights(db: Session = Depends(get_db)):
         "most_active": most_active,
         "biggest_outperformer": outperf,
         "hot_stock": hot_stock,
+        "hot_stocks": hot_stocks,
         "disclosure_lag": disclosure_lag,
         "biggest_trade": biggest_trade
     }
