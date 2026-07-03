@@ -4,13 +4,48 @@ import { getPersons, toggleFollow, getAllPerformance, createPerson, getAvailable
 import SearchBar from '../components/SearchBar';
 import CategoryPills from '../components/CategoryPills';
 import PersonCard from '../components/PersonCard';
-import { Plus } from 'lucide-react';
+import { Plus, Copy } from 'lucide-react';
+
+const TICKER_INFO = {
+  AAPL: { name: 'Apple Inc.', isin: 'US0378331005' },
+  MSFT: { name: 'Microsoft Corporation', isin: 'US5949181045' },
+  TSLA: { name: 'Tesla, Inc.', isin: 'US88160R1014' },
+  NVDA: { name: 'NVIDIA Corporation', isin: 'US67066G1040' },
+  TT: { name: 'Trane Technologies plc', isin: 'IE00B6S95B28' },
+  SAP: { name: 'SAP SE', isin: 'DE0007164600' },
+  BMW: { name: 'Bayerische Motoren Werke AG', isin: 'DE0005190003' },
+  AMZN: { name: 'Amazon.com, Inc.', isin: 'US0231351067' },
+  GOOGL: { name: 'Alphabet Inc.', isin: 'US02079K3059' },
+  GOOG: { name: 'Alphabet Inc.', isin: 'US02079K1079' },
+  META: { name: 'Meta Platforms, Inc.', isin: 'US30303M1027' },
+  NFLX: { name: 'Netflix, Inc.', isin: 'US64110L1061' },
+  RHEINMETALL: { name: 'Rheinmetall AG', isin: 'DE0007030009' },
+  SIEMENS: { name: 'Siemens AG', isin: 'DE0007236101' },
+};
+
+function getTickerIsin(ticker) {
+  const clean = (ticker || '').trim().toUpperCase();
+  if (TICKER_INFO[clean]) {
+    return TICKER_INFO[clean].isin;
+  }
+  return clean.endsWith('GERMANY') || clean.length > 5 
+    ? `DE000A${clean.slice(0, 3)}1005` 
+    : `US0${clean.slice(0, 3)}901002`;
+}
 
 export default function PortfoliosTab() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [sortBy, setSortBy] = useState('recent_trade');
   const [showAdd, setShowAdd] = useState(false);
+  const [copiedIsin, setCopiedIsin] = useState(null);
+  
+  const handleCopyIsin = (e, isin) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(isin);
+    setCopiedIsin(isin);
+    setTimeout(() => setCopiedIsin(null), 2000);
+  };
   
   const [form, setForm] = useState({ name: '', category: 'Congress', description: '', photo_url: '' });
 
@@ -80,42 +115,57 @@ export default function PortfoliosTab() {
   return (
     <div className="animate-fade-in space-y-4">
       {/* Insights Row */}
+      {/* Insights Row */}
       {insights && (
         <div className="px-5 pt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           
           {/* Card 1: Most Active */}
           <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
             <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Most active</span>
-            <div className="flex items-center gap-2 mt-2">
-              <div className="w-8 h-8 rounded-full overflow-hidden border border-border shrink-0 bg-surface-2 flex items-center justify-center">
-                {insights.most_active?.photo_url ? (
-                  <img src={insights.most_active.photo_url} className="w-full h-full object-cover" alt="" />
-                ) : (
-                  <div className="text-[10px] text-slate-500 font-bold uppercase">{insights.most_active?.name?.[0]}</div>
-                )}
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold truncate" style={{ color: 'var(--text-bright)' }}>{insights.most_active?.name}</div>
-                <div className="text-[10px] text-cyan-400 font-semibold">{insights.most_active?.trades_count} trades</div>
-              </div>
+            <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
+              {(insights.most_active_list || (insights.most_active ? [insights.most_active] : [])).slice(0, 2).map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-full overflow-hidden border border-border shrink-0 bg-surface-2 flex items-center justify-center text-[9px] font-bold text-slate-400">
+                    {item.photo_url ? (
+                      <img src={item.photo_url} className="w-full h-full object-cover" alt="" />
+                    ) : (
+                      item.name?.[0]
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 flex justify-between items-center text-[11px]">
+                    <span className="font-bold text-slate-200 truncate pr-2" title={item.name}>{item.name}</span>
+                    <span className="text-[9px] text-cyan-400 font-semibold shrink-0">{item.trades_count}t</span>
+                  </div>
+                </div>
+              ))}
+              {(!insights.most_active_list && !insights.most_active) && (
+                <div className="text-[10px] text-slate-500 italic">No trades recorded</div>
+              )}
             </div>
           </div>
 
           {/* Card 2: Biggest Outperformer */}
           <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
             <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Biggest outperformer</span>
-            <div className="flex items-center gap-2 mt-2">
-              <div className="w-8 h-8 rounded-full overflow-hidden border border-border shrink-0 bg-surface-2 flex items-center justify-center">
-                {insights.biggest_outperformer?.photo_url ? (
-                  <img src={insights.biggest_outperformer.photo_url} className="w-full h-full object-cover" alt="" />
-                ) : (
-                  <div className="text-[10px] text-slate-500 font-bold uppercase">{insights.biggest_outperformer?.name?.[0]}</div>
-                )}
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold truncate" style={{ color: 'var(--text-bright)' }}>{insights.biggest_outperformer?.name}</div>
-                <div className="text-[10px] text-green-500 font-bold">{insights.biggest_outperformer?.perf_vs_spy}</div>
-              </div>
+            <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
+              {(insights.outperf_list || (insights.biggest_outperformer ? [insights.biggest_outperformer] : [])).slice(0, 2).map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-full overflow-hidden border border-border shrink-0 bg-surface-2 flex items-center justify-center text-[9px] font-bold text-slate-400">
+                    {item.photo_url ? (
+                      <img src={item.photo_url} className="w-full h-full object-cover" alt="" />
+                    ) : (
+                      item.name?.[0]
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 flex justify-between items-center text-[11px]">
+                    <span className="font-bold text-slate-200 truncate pr-2" title={item.name}>{item.name}</span>
+                    <span className="text-[9px] text-green-500 font-bold shrink-0">{item.perf_vs_spy?.split(" ")[0]}</span>
+                  </div>
+                </div>
+              ))}
+              {(!insights.outperf_list && !insights.biggest_outperformer) && (
+                <div className="text-[10px] text-slate-500 italic">No trades recorded</div>
+              )}
             </div>
           </div>
 
@@ -123,20 +173,33 @@ export default function PortfoliosTab() {
           <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
             <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Hot stocks (60d)</span>
             <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
-              {insights.hot_stocks && insights.hot_stocks.slice(0, 3).map((stock, idx) => (
-                <div key={stock.ticker} className="flex items-center justify-between text-[11px]">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-[9px] text-slate-500 font-mono">#{idx+1}</span>
-                    <span className="font-bold text-slate-200 truncate">{stock.ticker}</span>
+              {insights.hot_stocks && insights.hot_stocks.slice(0, 3).map((stock, idx) => {
+                const isin = getTickerIsin(stock.ticker);
+                return (
+                  <div key={stock.ticker} className="flex items-center justify-between text-[11px] gap-1">
+                    <div className="flex items-center gap-1 min-w-0">
+                      <span className="text-[9px] text-slate-500 font-mono">#{idx+1}</span>
+                      <span className="font-bold text-slate-200 truncate">{stock.ticker}</span>
+                      
+                      {/* Copyable ISIN */}
+                      <span 
+                        onClick={(e) => handleCopyIsin(e, isin)}
+                        title="Click to copy ISIN"
+                        className="flex items-center gap-0.5 px-1 py-0.2 rounded text-[7px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/30 cursor-pointer transition-all font-mono select-none"
+                      >
+                        {copiedIsin === isin ? 'Copied!' : isin}
+                        {copiedIsin !== isin && <Copy size={5} />}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0 text-right">
+                      <span className={`font-semibold text-[10px] ${stock.perf_pct?.startsWith('+') ? 'text-green-500' : stock.perf_pct?.startsWith('-') ? 'text-red-500' : 'text-slate-400'}`}>
+                        {stock.perf_pct}
+                      </span>
+                      <span className="text-[8px] text-slate-500 font-medium">({stock.trades_count}t)</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0 text-right">
-                    <span className={`font-semibold ${stock.perf_pct?.startsWith('+') ? 'text-green-500' : stock.perf_pct?.startsWith('-') ? 'text-red-500' : 'text-slate-400'}`}>
-                      {stock.perf_pct}
-                    </span>
-                    <span className="text-[9px] text-slate-500 font-medium">({stock.trades_count}t)</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {(!insights.hot_stocks || insights.hot_stocks.length === 0) && (
                 <div className="text-[10px] text-slate-500 italic">No recent trades</div>
               )}
@@ -144,26 +207,35 @@ export default function PortfoliosTab() {
           </div>
 
           {/* Card 4: Disclosure Lag */}
-          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
+          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between items-center text-center shadow-md hover:border-border-bright transition-all">
             <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Disclosure lag</span>
-            <div className="mt-1">
-              <div className="text-xs font-bold" style={{ color: 'var(--text-bright)' }}>
-                {insights.disclosure_lag?.median_days === 'N/A' ? 'N/A' : `${insights.disclosure_lag?.median_days}d`} <span className="text-[10px] text-slate-500 font-normal">median</span>
+            <div className="mt-2 flex-1 flex flex-col justify-center items-center">
+              <div className="text-sm font-extrabold" style={{ color: 'var(--text-bright)' }}>
+                {insights.disclosure_lag?.median_days === 'N/A' ? 'N/A' : `${insights.disclosure_lag?.median_days}d`}{' '}
+                <span className="text-[10px] text-slate-500 font-normal">median</span>
               </div>
-              <div className="text-[10px] text-amber-500 font-semibold mt-0.5">
+              <div className="text-[10px] text-amber-500 font-semibold mt-1">
                 {insights.disclosure_lag?.late_pct === 'N/A' ? 'No late trades' : `${insights.disclosure_lag?.late_pct} late`}
               </div>
             </div>
           </div>
 
-          {/* Card 5: Biggest Single Trade */}
+          {/* Card 5: Biggest Trades */}
           <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
-            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Biggest single trade</span>
-            <div className="mt-1">
-              <div className="text-xs font-bold text-cyan-400">{insights.biggest_trade?.amount}</div>
-              <div className="text-[9px] text-slate-500 truncate">
-                {insights.biggest_trade?.person_name} · {insights.biggest_trade?.date}
-              </div>
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Biggest Trades</span>
+            <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
+              {(insights.biggest_trades_list || (insights.biggest_trade ? [insights.biggest_trade] : [])).slice(0, 2).map((item, idx) => (
+                <div key={idx} className="flex justify-between items-center text-[10px] min-w-0">
+                  <div className="min-w-0 flex-1 pr-1">
+                    <div className="text-[10px] font-bold text-slate-200 truncate">{item.person_name}</div>
+                    <div className="text-[8px] text-slate-500 truncate">{item.ticker} · {item.date}</div>
+                  </div>
+                  <div className="text-[10px] font-extrabold text-cyan-400 shrink-0">{item.amount}</div>
+                </div>
+              ))}
+              {(!insights.biggest_trades_list && !insights.biggest_trade) && (
+                <div className="text-[10px] text-slate-500 italic">No trades recorded</div>
+              )}
             </div>
           </div>
 

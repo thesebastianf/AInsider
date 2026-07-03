@@ -198,37 +198,45 @@ def get_insights(db: Session = Depends(get_db)):
     """Calculate and return congressional trading platform insights."""
     from datetime import date, timedelta
     
-    # 1. Most Active Tracked Person
-    active_q = (
-        db.query(Trade.target_person_id, func.count(Trade.id).label("trade_count"))
-        .group_by(Trade.target_person_id)
-        .order_by(func.count(Trade.id).desc())
-        .first()
-    )
+    # 1. Most Active Tracked Persons
+    most_active_list = []
     most_active = None
-    if active_q:
-        p_id, cnt = active_q
-        person = db.query(TargetPerson).filter(TargetPerson.id == p_id).first()
-        if person:
-            most_active = {
-                "name": person.name,
-                "photo_url": person.photo_url,
-                "trades_count": cnt
-            }
-            
+    try:
+        active_q = (
+            db.query(Trade.target_person_id, func.count(Trade.id).label("trade_count"))
+            .group_by(Trade.target_person_id)
+            .order_by(func.count(Trade.id).desc())
+            .limit(3)
+            .all()
+        )
+        for p_id, cnt in active_q:
+            person = db.query(TargetPerson).filter(TargetPerson.id == p_id).first()
+            if person:
+                most_active_list.append({
+                    "name": person.name,
+                    "photo_url": person.custom_photo_url or person.photo_url,
+                    "trades_count": cnt
+                })
+        if most_active_list:
+            most_active = most_active_list[0]
+    except Exception:
+        pass
+
     if not most_active:
         most_active = {
             "name": "No trades recorded",
             "photo_url": None,
             "trades_count": 0
         }
+    if not most_active_list:
+        most_active_list = [most_active]
 
     # 2. Biggest Outperformer
+    outperf_list = []
     outperf = None
     try:
         persons = db.query(TargetPerson).all()
-        best_p = None
-        best_avg = -999.0
+        candidates = []
         for p in persons:
             tickers = [t[0] for t in db.query(Trade.ticker).filter(Trade.target_person_id == p.id).distinct().all()]
             if not tickers:
@@ -238,15 +246,16 @@ def get_insights(db: Session = Depends(get_db)):
                 valid_vals = [pv[0] for pv in perf_vals if pv[0] is not None]
                 if valid_vals:
                     avg_perf = sum(valid_vals) / len(valid_vals)
-                    if avg_perf > best_avg:
-                        best_avg = avg_perf
-                        best_p = p
-        if best_p and best_avg > -100:
-            outperf = {
-                "name": best_p.name,
-                "photo_url": best_p.photo_url,
-                "perf_vs_spy": f"+{best_avg:.1f}% vs SPY"
-            }
+                    candidates.append((avg_perf, p))
+        candidates.sort(key=lambda x: -x[0])
+        for avg_perf, p in candidates[:3]:
+            outperf_list.append({
+                "name": p.name,
+                "photo_url": p.custom_photo_url or p.photo_url,
+                "perf_vs_spy": f"+{avg_perf:.1f}% vs SPY" if avg_perf >= 0 else f"{avg_perf:.1f}% vs SPY"
+            })
+        if outperf_list:
+            outperf = outperf_list[0]
     except Exception:
         pass
         
@@ -256,6 +265,8 @@ def get_insights(db: Session = Depends(get_db)):
             "photo_url": None,
             "perf_vs_spy": "N/A"
         }
+    if not outperf_list:
+        outperf_list = [outperf]
 
     # 3. Hot Stock (60d)
     hot_stocks = []
@@ -318,34 +329,33 @@ def get_insights(db: Session = Depends(get_db)):
     except Exception:
         pass
 
-    # 5. Biggest Single Trade
+    # 5. Biggest Trades
+    biggest_trades_list = []
     biggest_trade = None
     try:
         all_trades = db.query(Trade).all()
-        max_val = -1.0
-        best_t = None
+        candidates = []
         for t in all_trades:
-            val_str = t.amount_range or ""
-            val = parse_amount_to_float(val_str)
-            if val > max_val:
-                max_val = val
-                best_t = t
-                
-        if best_t and max_val > 0:
-            person = db.query(TargetPerson).filter(TargetPerson.id == best_t.target_person_id).first()
-            if max_val >= 1000000:
-                formatted_val = f"${max_val / 1000000:.1f}M"
-            elif max_val >= 1000:
-                formatted_val = f"${max_val / 1000:.0f}K"
+            val = parse_amount_to_float(t.amount_range)
+            if val > 0:
+                candidates.append((val, t))
+        candidates.sort(key=lambda x: -x[0])
+        for val, t in candidates[:3]:
+            person = db.query(TargetPerson).filter(TargetPerson.id == t.target_person_id).first()
+            if val >= 1000000:
+                formatted_val = f"${val / 1000000:.1f}M"
+            elif val >= 1000:
+                formatted_val = f"${val / 1000:.0f}K"
             else:
-                formatted_val = f"${max_val:.0f}"
-                
-            biggest_trade = {
+                formatted_val = f"${val:.0f}"
+            biggest_trades_list.append({
                 "amount": formatted_val,
                 "person_name": person.name if person else "Unknown",
-                "ticker": best_t.ticker,
-                "date": best_t.trade_date.isoformat()
-            }
+                "ticker": t.ticker,
+                "date": t.trade_date.isoformat() if t.trade_date else ""
+            })
+        if biggest_trades_list:
+            biggest_trade = biggest_trades_list[0]
     except Exception:
         pass
         
@@ -356,12 +366,17 @@ def get_insights(db: Session = Depends(get_db)):
             "ticker": "",
             "date": ""
         }
+    if not biggest_trades_list:
+        biggest_trades_list = [biggest_trade]
 
     return {
         "most_active": most_active,
+        "most_active_list": most_active_list,
         "biggest_outperformer": outperf,
+        "outperf_list": outperf_list,
         "hot_stock": hot_stock,
         "hot_stocks": hot_stocks,
         "disclosure_lag": disclosure_lag,
-        "biggest_trade": biggest_trade
+        "biggest_trade": biggest_trade,
+        "biggest_trades_list": biggest_trades_list
     }

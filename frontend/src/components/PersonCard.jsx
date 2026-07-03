@@ -363,7 +363,7 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
 
         {/* Inline Trade History (Collapsible) */}
         {showHistory && (
-          <div className="mt-3 pt-3 border-t border-border/40 relative z-10 space-y-2">
+          <div onClick={(e) => e.stopPropagation()} className="mt-3 pt-3 border-t border-border/40 relative z-10 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Trade History</span>
               <button 
