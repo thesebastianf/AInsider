@@ -67,6 +67,8 @@ export default function ClustersModal({ clusters = [], onClose }) {
                     : `${new Date(item.first_buy_date).toLocaleDateString()} – ${new Date(item.latest_buy_date).toLocaleDateString()}`
                   : 'Recent';
 
+                const hasRealName = Boolean(item.company_name && item.company_name !== item.ticker && !item.company_name.endsWith('Stock') && !item.company_name.endsWith('Corp.'));
+
                 return (
                   <div
                     key={item.ticker}
@@ -97,7 +99,7 @@ export default function ClustersModal({ clusters = [], onClose }) {
                             <span className="font-extrabold font-mono text-cyan-400 text-base hover:underline">
                               {item.ticker}
                             </span>
-                            {item.company_name && (
+                            {hasRealName && (
                               <span className="text-xs font-semibold text-slate-300">
                                 ({item.company_name})
                               </span>

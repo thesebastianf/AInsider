@@ -65,6 +65,8 @@ export default function HotStocksModal({ hotStocks = [], onClose }) {
                 const sellCount = stock.sell_count || 0;
                 const total = stock.trades_count || 0;
 
+                const hasRealName = Boolean(stock.company_name && stock.company_name !== stock.ticker && !stock.company_name.endsWith('Stock') && !stock.company_name.endsWith('Corp.'));
+
                 return (
                   <div
                     key={stock.ticker}
@@ -94,7 +96,7 @@ export default function HotStocksModal({ hotStocks = [], onClose }) {
                           <span className="font-extrabold font-mono text-cyan-400 text-sm sm:text-base hover:underline">
                             {stock.ticker}
                           </span>
-                          {stock.company_name && (
+                          {hasRealName && (
                             <span className="text-xs font-semibold text-slate-300 truncate max-w-[180px] sm:max-w-[240px]" title={stock.company_name}>
                               ({stock.company_name})
                             </span>

@@ -24,6 +24,8 @@ TICKER_INFO = {
     "TSLA": {"name": "Tesla, Inc.", "isin": "US88160R1014"},
     "NVDA": {"name": "NVIDIA Corporation", "isin": "US67066G1040"},
     "SE": {"name": "Sea Limited", "isin": "US81141R1005"},
+    "CLBK": {"name": "Columbia Financial, Inc.", "isin": "US1978901086"},
+    "TSM": {"name": "Taiwan Semiconductor Manufacturing Co.", "isin": "US8740391003"},
     "PLTR": {"name": "Palantir Technologies Inc.", "isin": "US69608A1088"},
     "AMD": {"name": "Advanced Micro Devices, Inc.", "isin": "US0079031078"},
     "BABA": {"name": "Alibaba Group Holding Limited", "isin": "US01609W1027"},
@@ -31,6 +33,24 @@ TICKER_INFO = {
     "DIS": {"name": "The Walt Disney Company", "isin": "US2546871060"},
     "JPM": {"name": "JPMorgan Chase & Co.", "isin": "US46625H1005"},
     "BAC": {"name": "Bank of America Corporation", "isin": "US0605051046"},
+    "SMCI": {"name": "Super Micro Computer, Inc.", "isin": "US86800U1043"},
+    "LLY": {"name": "Eli Lilly and Company", "isin": "US5324571083"},
+    "CEG": {"name": "Constellation Energy Corporation", "isin": "US21037T1097"},
+    "NVR": {"name": "NVR, Inc.", "isin": "US62944T1051"},
+    "COIN": {"name": "Coinbase Global, Inc.", "isin": "US19260Q1076"},
+    "HOOD": {"name": "Robinhood Markets, Inc.", "isin": "US7707001027"},
+    "ARM": {"name": "Arm Holdings plc", "isin": "US0420681068"},
+    "ASML": {"name": "ASML Holding N.V.", "isin": "US02924F1057"},
+    "NVO": {"name": "Novo Nordisk A/S", "isin": "US6701002056"},
+    "DELL": {"name": "Dell Technologies Inc.", "isin": "US24703L2025"},
+    "ORCL": {"name": "Oracle Corporation", "isin": "US68389X1054"},
+    "CRWD": {"name": "CrowdStrike Holdings, Inc.", "isin": "US22788C1053"},
+    "NET": {"name": "Cloudflare, Inc.", "isin": "US18915M1071"},
+    "SHOP": {"name": "Shopify Inc.", "isin": "CA82509L1076"},
+    "SNOW": {"name": "Snowflake Inc.", "isin": "US8334451098"},
+    "SOFI": {"name": "SoFi Technologies, Inc.", "isin": "US83406D1090"},
+    "AVGO": {"name": "Broadcom Inc.", "isin": "US11135F1012"},
+    "COST": {"name": "Costco Wholesale Corporation", "isin": "US22160K1051"},
     "TT": {"name": "Trane Technologies plc", "isin": "IE00B6S95B28"},
     "SAP": {"name": "SAP SE", "isin": "DE0007164600"},
     "BMW": {"name": "Bayerische Motoren Werke AG", "isin": "DE0005190003"},
@@ -56,7 +76,7 @@ TICKER_INFO = {
 def resolve_ticker_and_isin(symbol_or_isin: str):
     clean = (symbol_or_isin or "").strip().upper()
     if not clean:
-        return clean, "", f"{clean} Stock"
+        return clean, "", None
     
     # 1. Direct ticker match
     if clean in TICKER_INFO:
@@ -69,7 +89,7 @@ def resolve_ticker_and_isin(symbol_or_isin: str):
             
     # 3. Default fallback logic
     isin = clean if (clean.startswith("US") or clean.startswith("DE") or clean.startswith("IE") or len(clean) == 12) else f"US0{clean[:3]}901002"
-    return clean, isin, f"{clean} Stock"
+    return clean, isin, None
 
 
 @router.get("/assets", response_model=AssetListOut)

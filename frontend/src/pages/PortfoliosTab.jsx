@@ -17,6 +17,8 @@ const TICKER_INFO = {
   TSLA: { name: 'Tesla, Inc.', isin: 'US88160R1014' },
   NVDA: { name: 'NVIDIA Corporation', isin: 'US67066G1040' },
   SE: { name: 'Sea Limited', isin: 'US81141R1005' },
+  CLBK: { name: 'Columbia Financial, Inc.', isin: 'US1978901086' },
+  TSM: { name: 'Taiwan Semiconductor Manufacturing Co.', isin: 'US8740391003' },
   PLTR: { name: 'Palantir Technologies Inc.', isin: 'US69608A1088' },
   AMD: { name: 'Advanced Micro Devices, Inc.', isin: 'US0079031078' },
   BABA: { name: 'Alibaba Group Holding Limited', isin: 'US01609W1027' },
@@ -24,6 +26,24 @@ const TICKER_INFO = {
   DIS: { name: 'The Walt Disney Company', isin: 'US2546871060' },
   JPM: { name: 'JPMorgan Chase & Co.', isin: 'US46625H1005' },
   BAC: { name: 'Bank of America Corporation', isin: 'US0605051046' },
+  SMCI: { name: 'Super Micro Computer, Inc.', isin: 'US86800U1043' },
+  LLY: { name: 'Eli Lilly and Company', isin: 'US5324571083' },
+  CEG: { name: 'Constellation Energy Corporation', isin: 'US21037T1097' },
+  NVR: { name: 'NVR, Inc.', isin: 'US62944T1051' },
+  COIN: { name: 'Coinbase Global, Inc.', isin: 'US19260Q1076' },
+  HOOD: { name: 'Robinhood Markets, Inc.', isin: 'US7707001027' },
+  ARM: { name: 'Arm Holdings plc', isin: 'US0420681068' },
+  ASML: { name: 'ASML Holding N.V.', isin: 'US02924F1057' },
+  NVO: { name: 'Novo Nordisk A/S', isin: 'US6701002056' },
+  DELL: { name: 'Dell Technologies Inc.', isin: 'US24703L2025' },
+  ORCL: { name: 'Oracle Corporation', isin: 'US68389X1054' },
+  CRWD: { name: 'CrowdStrike Holdings, Inc.', isin: 'US22788C1053' },
+  NET: { name: 'Cloudflare, Inc.', isin: 'US18915M1071' },
+  SHOP: { name: 'Shopify Inc.', isin: 'CA82509L1076' },
+  SNOW: { name: 'Snowflake Inc.', isin: 'US8334451098' },
+  SOFI: { name: 'SoFi Technologies, Inc.', isin: 'US83406D1090' },
+  AVGO: { name: 'Broadcom Inc.', isin: 'US11135F1012' },
+  COST: { name: 'Costco Wholesale Corporation', isin: 'US22160K1051' },
   TT: { name: 'Trane Technologies plc', isin: 'IE00B6S95B28' },
   SAP: { name: 'SAP SE', isin: 'DE0007164600' },
   BMW: { name: 'Bayerische Motoren Werke AG', isin: 'DE0005190003' },
@@ -53,7 +73,7 @@ function getTickerDetails(ticker) {
   const isin = clean.endsWith('GERMANY') || clean.length > 5 
     ? `DE000A${clean.slice(0, 3)}1005` 
     : `US0${clean.slice(0, 3)}901002`;
-  return { name: `${clean} Corp.`, isin };
+  return { name: null, isin };
 }
 
 function getTickerIsin(ticker) {
@@ -222,7 +242,7 @@ export default function PortfoliosTab() {
               {insights.hot_stocks && insights.hot_stocks.slice(0, 3).map((stock, idx) => {
                 const details = getTickerDetails(stock.ticker);
                 const companyName = stock.company_name || details.name;
-                const isin = stock.isin || details.isin;
+                const hasRealName = Boolean(companyName && companyName !== stock.ticker && !companyName.endsWith('Stock') && !companyName.endsWith('Corp.'));
 
                 return (
                   <div key={stock.ticker} className="flex items-center justify-between text-[11px] gap-1">
@@ -230,10 +250,10 @@ export default function PortfoliosTab() {
                       <span className="text-[9px] text-slate-500 font-mono">#{idx+1}</span>
                       <button
                         onClick={() => openSymbolOverview(stock.ticker)}
-                        className="font-bold text-slate-200 hover:text-cyan-400 hover:underline transition-colors truncate max-w-[120px]"
-                        title={`${stock.ticker} - ${companyName}`}
+                        className="font-bold text-slate-200 hover:text-cyan-400 hover:underline transition-colors truncate max-w-[130px]"
+                        title={hasRealName ? `${stock.ticker} - ${companyName}` : stock.ticker}
                       >
-                        {stock.ticker} <span className="text-[9px] text-slate-400 font-normal">({companyName})</span>
+                        {stock.ticker} {hasRealName && <span className="text-[9px] text-slate-400 font-normal">({companyName})</span>}
                       </button>
                     </div>
                     <div className="flex items-center gap-1 shrink-0 text-right">
@@ -273,15 +293,16 @@ export default function PortfoliosTab() {
               {clusterItems.slice(0, 3).map((item) => {
                 const details = getTickerDetails(item.ticker);
                 const companyName = item.company_name || details.name;
+                const hasRealName = Boolean(companyName && companyName !== item.ticker && !companyName.endsWith('Stock') && !companyName.endsWith('Corp.'));
 
                 return (
                   <div key={item.ticker} className="flex items-center justify-between text-[11px] gap-1">
                     <button
                       onClick={() => openSymbolOverview(item.ticker)}
-                      className="font-extrabold text-cyan-400 hover:underline font-mono truncate max-w-[110px]"
-                      title={`${item.ticker} (${companyName}) - Bought by: ${item.buyer_names.join(', ')}`}
+                      className="font-extrabold text-cyan-400 hover:underline font-mono truncate max-w-[120px]"
+                      title={hasRealName ? `${item.ticker} (${companyName}) - Bought by: ${item.buyer_names.join(', ')}` : `${item.ticker} - Bought by: ${item.buyer_names.join(', ')}`}
                     >
-                      {item.ticker} <span className="text-[9px] text-slate-400 font-normal font-sans">({companyName})</span>
+                      {item.ticker} {hasRealName && <span className="text-[9px] text-slate-400 font-normal font-sans">({companyName})</span>}
                     </button>
                     <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded font-mono shrink-0" title={`Bought by ${item.distinct_buyers_count} different insiders`}>
                       ⚡ {item.distinct_buyers_count} buyers

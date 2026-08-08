@@ -126,12 +126,12 @@ export default function StockPriceChart({ ticker, currentPrice, ytdPerf, trades 
 
         <div className="flex items-center gap-4 text-[11px] font-mono">
           <div className="flex items-center gap-1">
-            <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.8)]" />
-            <span className="text-slate-400">BUY Trade</span>
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(34,197,94,0.8)]" />
+            <span className="text-emerald-400 font-bold">BUY</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]" />
-            <span className="text-slate-400">SELL Trade</span>
+            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.8)]" />
+            <span className="text-blue-400 font-bold">SELL</span>
           </div>
         </div>
       </div>
@@ -145,8 +145,8 @@ export default function StockPriceChart({ ticker, currentPrice, ytdPerf, trades 
               <stop offset="100%" stopColor="#22c55e" stopOpacity="0.0" />
             </linearGradient>
             <linearGradient id="redGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#ef4444" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.0" />
+              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
+              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
             </linearGradient>
           </defs>
 
@@ -175,8 +175,7 @@ export default function StockPriceChart({ ticker, currentPrice, ytdPerf, trades 
           {/* Trade Marker Pins */}
           {markers.map((m, idx) => {
             const hasBuy = m.trades.some(t => t.type === 'BUY');
-            const hasSell = m.trades.some(t => t.type === 'SELL');
-            const pinColor = hasBuy ? '#22c55e' : '#ef4444';
+            const pinColor = hasBuy ? '#22c55e' : '#3b82f6';
 
             return (
               <g key={`marker-${idx}`} className="cursor-pointer">
@@ -236,7 +235,7 @@ export default function StockPriceChart({ ticker, currentPrice, ytdPerf, trades 
                   <div key={t.id} className="flex items-center justify-between gap-3 text-[10px]">
                     <span className="font-bold text-slate-200">{t.person_name}</span>
                     <span className={`px-1.5 py-0.2 rounded font-mono font-bold ${
-                      t.type === 'BUY' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                      t.type === 'BUY' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                     }`}>
                       {t.type} {t.amount_range}
                     </span>

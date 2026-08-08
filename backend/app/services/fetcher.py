@@ -18,17 +18,84 @@ from app.config import settings
 
 logger = logging.getLogger("ainsider.fetcher")
 
+CURATED_PERSON_PHOTOS = {
+    # Fund Managers & Superinvestors
+    "MICHAEL BURRY": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Michael_Burry.jpeg/300px-Michael_Burry.jpeg",
+    "SCION ASSET MANAGEMENT": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Michael_Burry.jpeg/300px-Michael_Burry.jpeg",
+    "LEOPOLD ASCHRENBRENNER": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Leopold_Aschenbrenner_2024.jpg/300px-Leopold_Aschenbrenner_2024.jpg",
+    "SITUATIONAL AWARENESS": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Leopold_Aschenbrenner_2024.jpg/300px-Leopold_Aschenbrenner_2024.jpg",
+    "WARREN BUFFETT": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Warren_Buffett_KU_Visit_2011_cropped.jpg/300px-Warren_Buffett_KU_Visit_2011_cropped.jpg",
+    "BERKSHIRE HATHAWAY": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Warren_Buffett_KU_Visit_2011_cropped.jpg/300px-Warren_Buffett_KU_Visit_2011_cropped.jpg",
+    "BILL ACKMAN": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Bill_Ackman_%2848419702221%29_%28cropped%29.jpg/300px-Bill_Ackman_%2848419702221%29_%28cropped%29.jpg",
+    "PERSHING SQUARE": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Bill_Ackman_%2848419702221%29_%28cropped%29.jpg/300px-Bill_Ackman_%2848419702221%29_%28cropped%29.jpg",
+    "CATHIE WOOD": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Cathie_Wood_2021.jpg/300px-Cathie_Wood_2021.jpg",
+    "ARK INVESTMENT": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Cathie_Wood_2021.jpg/300px-Cathie_Wood_2021.jpg",
+    "GEORGE SOROS": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/14/George_Soros_-_World_Economic_Forum_Annual_Meeting_2010.jpg/300px-George_Soros_-_World_Economic_Forum_Annual_Meeting_2010.jpg",
+    "RAY DALIO": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Ray_Dalio_stat.jpg/300px-Ray_Dalio_stat.jpg",
+    "BRIDGEWATER ASSOCIATES": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Ray_Dalio_stat.jpg/300px-Ray_Dalio_stat.jpg",
+    "CARL ICAHN": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Carl_Icahn_by_Gage_Skidmore_2.jpg/300px-Carl_Icahn_by_Gage_Skidmore_2.jpg",
+    "ICAHN ASSOCIATES": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Carl_Icahn_by_Gage_Skidmore_2.jpg/300px-Carl_Icahn_by_Gage_Skidmore_2.jpg",
+    "STANLEY DRUCKENMILLER": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Stanley_Druckenmiller_2015.jpg/300px-Stanley_Druckenmiller_2015.jpg",
+    "DUQUESNE FAMILY OFFICE": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Stanley_Druckenmiller_2015.jpg/300px-Stanley_Druckenmiller_2015.jpg",
+    "JIM SIMONS": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d7/Jim_Simons_2007.jpg/300px-Jim_Simons_2007.jpg",
+    "RENAISSANCE TECHNOLOGIES": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d7/Jim_Simons_2007.jpg/300px-Jim_Simons_2007.jpg",
+    "STEVE COHEN": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Steve_Cohen_2019.jpg/300px-Steve_Cohen_2019.jpg",
+    "POINT72": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Steve_Cohen_2019.jpg/300px-Steve_Cohen_2019.jpg",
+    "PAUL TUDOR JONES": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Paul_Tudor_Jones_2013.jpg/300px-Paul_Tudor_Jones_2013.jpg",
+    "TUDOR INVESTMENT": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/Paul_Tudor_Jones_2013.jpg/300px-Paul_Tudor_Jones_2013.jpg",
+    
+    # Key Politicians
+    "NANCY PELOSI": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Nancy_Pelosi_official_photo_113th_Congress.jpg/300px-Nancy_Pelosi_official_photo_113th_Congress.jpg",
+    "MITCH MCCONNELL": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/Mitch_McConnell_official_portrait_116th_congress.jpg/300px-Mitch_McConnell_official_portrait_116th_congress.jpg",
+    "CHUCK SCHUMER": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Chuck_Schumer_official_photo.jpg/300px-Chuck_Schumer_official_photo.jpg",
+    "THOMAS TUBERVILLE": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Tommy_Tuberville_official_portrait.jpg/300px-Tommy_Tuberville_official_portrait.jpg",
+    "MARK WARNER": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Mark_Warner_official_photo.jpg/300px-Mark_Warner_official_photo.jpg",
+}
+
+FUND_MANAGER_MAPPING = {
+    "SITUATIONAL AWARENESS": "Leopold Aschenbrenner",
+    "SCION ASSET MANAGEMENT": "Michael Burry",
+    "BERKSHIRE HATHAWAY": "Warren Buffett",
+    "PERSHING SQUARE": "Bill Ackman",
+    "DUQUESNE FAMILY OFFICE": "Stanley Druckenmiller",
+    "RENAISSANCE TECHNOLOGIES": "Jim Simons",
+    "BRIDGEWATER ASSOCIATES": "Ray Dalio",
+    "ICAHN ASSOCIATES": "Carl Icahn",
+    "POINT72": "Steve Cohen",
+    "TUDOR INVESTMENT": "Paul Tudor Jones",
+    "ARK INVESTMENT": "Cathie Wood",
+}
+
+
 def fetch_wikipedia_photo(name: str) -> Optional[str]:
-    """Attempt to fetch a 300px thumbnail from Wikipedia for a person's name using direct lookup and search fallback."""
+    """Attempt to fetch a photo for a person or fund manager using curated matches and Wikipedia API."""
     if not name:
         return None
         
-    headers = {'User-Agent': 'AInsiderTrackerBot/1.0 (admin@ainsidertracker.com)'}
     clean_name = name.strip()
+    upper_name = clean_name.upper()
 
-    # 1. Try direct title match
+    # 1. Check direct match in curated photos
+    for key, photo_url in CURATED_PERSON_PHOTOS.items():
+        if key in upper_name or upper_name in key:
+            return photo_url
+
+    # 2. Check if name maps to a fund manager (e.g. Scion Asset Management -> Michael Burry)
+    target_search_name = clean_name
+    for fund_key, manager_name in FUND_MANAGER_MAPPING.items():
+        if fund_key in upper_name:
+            target_search_name = manager_name
+            # Check if manager has curated photo
+            manager_upper = manager_name.upper()
+            if manager_upper in CURATED_PERSON_PHOTOS:
+                return CURATED_PERSON_PHOTOS[manager_upper]
+            break
+
+    headers = {'User-Agent': 'AInsiderTrackerBot/1.0 (admin@ainsidertracker.com)'}
+
+    # 3. Try direct Wikipedia title match for search target
     try:
-        url = f"https://en.wikipedia.org/w/api.php?action=query&titles={clean_name.replace(' ', '%20')}&prop=pageimages&format=json&pithumbsize=300"
+        url = f"https://en.wikipedia.org/w/api.php?action=query&titles={target_search_name.replace(' ', '%20')}&prop=pageimages&format=json&pithumbsize=300"
         resp = httpx.get(url, headers=headers, timeout=5.0)
         if resp.status_code == 200:
             pages = resp.json().get("query", {}).get("pages", {})
@@ -36,11 +103,11 @@ def fetch_wikipedia_photo(name: str) -> Optional[str]:
                 if page_id != "-1" and "thumbnail" in page:
                     return page["thumbnail"].get("source")
     except Exception as e:
-        logger.debug(f"Direct Wikipedia photo lookup failed for {name}: {e}")
+        logger.debug(f"Direct Wikipedia photo lookup failed for {target_search_name}: {e}")
 
-    # 2. Search fallback: Query Wikipedia search API for top article match
+    # 4. Search fallback: Query Wikipedia search API for top article match
     try:
-        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={clean_name.replace(' ', '%20')}&format=json&srlimit=1"
+        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={target_search_name.replace(' ', '%20')}&format=json&srlimit=1"
         resp = httpx.get(search_url, headers=headers, timeout=5.0)
         if resp.status_code == 200:
             results = resp.json().get("query", {}).get("search", [])
@@ -55,7 +122,7 @@ def fetch_wikipedia_photo(name: str) -> Optional[str]:
                             if page_id != "-1" and "thumbnail" in page:
                                 return page["thumbnail"].get("source")
     except Exception as e:
-        logger.debug(f"Search fallback Wikipedia photo lookup failed for {name}: {e}")
+        logger.debug(f"Search fallback Wikipedia photo lookup failed for {target_search_name}: {e}")
 
     return None
 

@@ -26,12 +26,24 @@ logger = logging.getLogger("ainsider.pipeline")
 
 def _get_or_create_person(db: Session, raw: RawTrade) -> TargetPerson:
     """Get existing person or create a new one."""
+    from app.services.fetcher import fetch_wikipedia_photo, FUND_MANAGER_MAPPING
+
     normalized_name = normalize_person_name(raw.person_name)
     raw.person_name = normalized_name
     person = db.query(TargetPerson).filter(TargetPerson.name == normalized_name).first()
+    
+    # Resolve display alias for funds (e.g. Scion Asset Management -> Scion Asset Management (Michael Burry))
+    display_alias = None
+    upper_name = normalized_name.upper()
+    for fund_key, manager_name in FUND_MANAGER_MAPPING.items():
+        if fund_key in upper_name:
+            display_alias = f"{normalized_name} ({manager_name})"
+            break
+
     if not person:
         person = TargetPerson(
             name=normalized_name,
+            display_name=display_alias,
             category=raw.person_category,
             committee_affiliations=raw.committees,
             photo_url=fetch_wikipedia_photo(normalized_name),
@@ -41,6 +53,13 @@ def _get_or_create_person(db: Session, raw: RawTrade) -> TargetPerson:
         db.add(person)
         db.flush()
         logger.info(f"Created available target person: {normalized_name} ({raw.person_category})")
+    else:
+        # Update display_name or photo_url if missing
+        if display_alias and not person.display_name:
+            person.display_name = display_alias
+        if not person.photo_url:
+            person.photo_url = fetch_wikipedia_photo(normalized_name)
+            
     return person
 
 
