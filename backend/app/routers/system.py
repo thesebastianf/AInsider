@@ -275,6 +275,7 @@ def get_insights(db: Session = Depends(get_db)):
         from app.routers.trades import resolve_ticker_and_isin
         from sqlalchemy import case, distinct
         sixty_days_ago = date.today() - timedelta(days=60)
+        INVALID_TICKERS = ["NONE", "NONE.", "N/A", "NA", "NULL", "UNKNOWN", ""]
         hot_q = (
             db.query(
                 Trade.ticker,
@@ -284,7 +285,11 @@ def get_insights(db: Session = Depends(get_db)):
                 func.count(distinct(Trade.target_person_id)).label("distinct_persons"),
                 func.max(Trade.trade_date).label("last_trade_date"),
             )
-            .filter(Trade.trade_date >= sixty_days_ago)
+            .filter(
+                Trade.trade_date >= sixty_days_ago,
+                Trade.ticker.isnot(None),
+                ~Trade.ticker.in_(INVALID_TICKERS)
+            )
             .group_by(Trade.ticker)
             .order_by(func.count(Trade.id).desc())
             .limit(10)

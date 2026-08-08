@@ -23,6 +23,14 @@ TICKER_INFO = {
     "MSFT": {"name": "Microsoft Corporation", "isin": "US5949181045"},
     "TSLA": {"name": "Tesla, Inc.", "isin": "US88160R1014"},
     "NVDA": {"name": "NVIDIA Corporation", "isin": "US67066G1040"},
+    "SE": {"name": "Sea Limited", "isin": "US81141R1005"},
+    "PLTR": {"name": "Palantir Technologies Inc.", "isin": "US69608A1088"},
+    "AMD": {"name": "Advanced Micro Devices, Inc.", "isin": "US0079031078"},
+    "BABA": {"name": "Alibaba Group Holding Limited", "isin": "US01609W1027"},
+    "INTC": {"name": "Intel Corporation", "isin": "US4581401001"},
+    "DIS": {"name": "The Walt Disney Company", "isin": "US2546871060"},
+    "JPM": {"name": "JPMorgan Chase & Co.", "isin": "US46625H1005"},
+    "BAC": {"name": "Bank of America Corporation", "isin": "US0605051046"},
     "TT": {"name": "Trane Technologies plc", "isin": "IE00B6S95B28"},
     "SAP": {"name": "SAP SE", "isin": "DE0007164600"},
     "BMW": {"name": "Bayerische Motoren Werke AG", "isin": "DE0005190003"},
@@ -31,6 +39,15 @@ TICKER_INFO = {
     "GOOG": {"name": "Alphabet Inc.", "isin": "US02079K1079"},
     "META": {"name": "Meta Platforms, Inc.", "isin": "US30303M1027"},
     "NFLX": {"name": "Netflix, Inc.", "isin": "US64110L1061"},
+    "PYPL": {"name": "PayPal Holdings, Inc.", "isin": "US70450Y1038"},
+    "CRM": {"name": "Salesforce, Inc.", "isin": "US79466L3024"},
+    "UBER": {"name": "Uber Technologies, Inc.", "isin": "US90353T1007"},
+    "UNH": {"name": "UnitedHealth Group Incorporated", "isin": "US91324P1021"},
+    "V": {"name": "Visa Inc.", "isin": "US92826C8394"},
+    "MA": {"name": "Mastercard Incorporated", "isin": "US57636Q1040"},
+    "WMT": {"name": "Walmart Inc.", "isin": "US9311421039"},
+    "XOM": {"name": "Exxon Mobil Corporation", "isin": "US30231G1022"},
+    "CVX": {"name": "Chevron Corporation", "isin": "US1667641005"},
     "RHEINMETALL": {"name": "Rheinmetall AG", "isin": "DE0007030009"},
     "SIEMENS": {"name": "Siemens AG", "isin": "DE0007236101"},
 }
@@ -261,18 +278,27 @@ def get_clusters(
     """Get co-buying cluster signals (assets where 2+ distinct insiders bought recently)."""
     from datetime import date, timedelta
     cutoff_date = date.today() - timedelta(days=days)
+    INVALID_TICKERS = {"NONE", "NONE.", "N/A", "NA", "NULL", "UNKNOWN", ""}
 
     buy_trades = (
         db.query(Trade)
         .join(TargetPerson)
-        .filter(Trade.type == "BUY", Trade.trade_date >= cutoff_date)
+        .filter(
+            Trade.type == "BUY", 
+            Trade.trade_date >= cutoff_date,
+            Trade.ticker.isnot(None),
+            ~Trade.ticker.in_(INVALID_TICKERS)
+        )
         .order_by(Trade.trade_date.desc())
         .all()
     )
 
     cluster_dict = {}
     for t in buy_trades:
-        tick = t.ticker
+        tick = t.ticker.strip().upper()
+        if tick in INVALID_TICKERS:
+            continue
+
         if tick not in cluster_dict:
             cluster_dict[tick] = {
                 "ticker": tick,
@@ -333,6 +359,8 @@ def unified_lookup(
     if not search_term:
         return LookupResultOut(persons=[], assets=[])
 
+    INVALID_TICKERS = {"NONE", "NONE.", "N/A", "NA", "NULL", "UNKNOWN", ""}
+
     # 1. Search TargetPersons
     person_query = (
         db.query(TargetPerson)
@@ -367,6 +395,10 @@ def unified_lookup(
             func.count(Trade.id).label("trade_count"),
             func.count(distinct(Trade.target_person_id)).label("distinct_insiders_count")
         )
+        .filter(
+            Trade.ticker.isnot(None),
+            ~Trade.ticker.in_(INVALID_TICKERS)
+        )
         .group_by(Trade.ticker)
         .all()
     )
@@ -376,6 +408,8 @@ def unified_lookup(
 
     for row in stats_query:
         ticker = row.ticker
+        if not ticker or ticker.upper() in INVALID_TICKERS:
+            continue
         resolved_ticker, isin, company_name = resolve_ticker_and_isin(ticker)
         if (
             st_upper in ticker.upper() or

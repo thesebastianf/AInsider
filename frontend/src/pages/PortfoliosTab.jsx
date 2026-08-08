@@ -15,6 +15,14 @@ const TICKER_INFO = {
   MSFT: { name: 'Microsoft Corporation', isin: 'US5949181045' },
   TSLA: { name: 'Tesla, Inc.', isin: 'US88160R1014' },
   NVDA: { name: 'NVIDIA Corporation', isin: 'US67066G1040' },
+  SE: { name: 'Sea Limited', isin: 'US81141R1005' },
+  PLTR: { name: 'Palantir Technologies Inc.', isin: 'US69608A1088' },
+  AMD: { name: 'Advanced Micro Devices, Inc.', isin: 'US0079031078' },
+  BABA: { name: 'Alibaba Group Holding Limited', isin: 'US01609W1027' },
+  INTC: { name: 'Intel Corporation', isin: 'US4581401001' },
+  DIS: { name: 'The Walt Disney Company', isin: 'US2546871060' },
+  JPM: { name: 'JPMorgan Chase & Co.', isin: 'US46625H1005' },
+  BAC: { name: 'Bank of America Corporation', isin: 'US0605051046' },
   TT: { name: 'Trane Technologies plc', isin: 'IE00B6S95B28' },
   SAP: { name: 'SAP SE', isin: 'DE0007164600' },
   BMW: { name: 'Bayerische Motoren Werke AG', isin: 'DE0005190003' },
@@ -23,18 +31,32 @@ const TICKER_INFO = {
   GOOG: { name: 'Alphabet Inc.', isin: 'US02079K1079' },
   META: { name: 'Meta Platforms, Inc.', isin: 'US30303M1027' },
   NFLX: { name: 'Netflix, Inc.', isin: 'US64110L1061' },
+  PYPL: { name: 'PayPal Holdings, Inc.', isin: 'US70450Y1038' },
+  CRM: { name: 'Salesforce, Inc.', isin: 'US79466L3024' },
+  UBER: { name: 'Uber Technologies, Inc.', isin: 'US90353T1007' },
+  UNH: { name: 'UnitedHealth Group Incorporated', isin: 'US91324P1021' },
+  V: { name: 'Visa Inc.', isin: 'US92826C8394' },
+  MA: { name: 'Mastercard Incorporated', isin: 'US57636Q1040' },
+  WMT: { name: 'Walmart Inc.', isin: 'US9311421039' },
+  XOM: { name: 'Exxon Mobil Corporation', isin: 'US30231G1022' },
+  CVX: { name: 'Chevron Corporation', isin: 'US1667641005' },
   RHEINMETALL: { name: 'Rheinmetall AG', isin: 'DE0007030009' },
   SIEMENS: { name: 'Siemens AG', isin: 'DE0007236101' },
 };
 
-function getTickerIsin(ticker) {
+function getTickerDetails(ticker) {
   const clean = (ticker || '').trim().toUpperCase();
   if (TICKER_INFO[clean]) {
-    return TICKER_INFO[clean].isin;
+    return TICKER_INFO[clean];
   }
-  return clean.endsWith('GERMANY') || clean.length > 5 
+  const isin = clean.endsWith('GERMANY') || clean.length > 5 
     ? `DE000A${clean.slice(0, 3)}1005` 
     : `US0${clean.slice(0, 3)}901002`;
+  return { name: `${clean} Corp.`, isin };
+}
+
+function getTickerIsin(ticker) {
+  return getTickerDetails(ticker).isin;
 }
 
 export default function PortfoliosTab() {
@@ -122,9 +144,8 @@ export default function PortfoliosTab() {
   return (
     <div className="animate-fade-in space-y-4">
       {/* Insights Row */}
-      {/* Insights Row */}
       {insights && (
-        <div className="px-5 pt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="px-5 pt-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
           
           {/* Card 1: Most Active */}
           <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
@@ -194,28 +215,21 @@ export default function PortfoliosTab() {
 
             <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
               {insights.hot_stocks && insights.hot_stocks.slice(0, 3).map((stock, idx) => {
-                const isin = stock.isin || getTickerIsin(stock.ticker);
+                const details = getTickerDetails(stock.ticker);
+                const companyName = stock.company_name || details.name;
+                const isin = stock.isin || details.isin;
+
                 return (
                   <div key={stock.ticker} className="flex items-center justify-between text-[11px] gap-1">
                     <div className="flex items-center gap-1 min-w-0">
                       <span className="text-[9px] text-slate-500 font-mono">#{idx+1}</span>
                       <button
                         onClick={() => openSymbolOverview(stock.ticker)}
-                        className="font-bold text-slate-200 hover:text-cyan-400 hover:underline transition-colors"
-                        title="Click to view asset overview"
+                        className="font-bold text-slate-200 hover:text-cyan-400 hover:underline transition-colors truncate max-w-[120px]"
+                        title={`${stock.ticker} - ${companyName}`}
                       >
-                        {stock.ticker}
+                        {stock.ticker} <span className="text-[9px] text-slate-400 font-normal">({companyName})</span>
                       </button>
-                      
-                      {/* Copyable ISIN */}
-                      <span 
-                        onClick={(e) => handleCopyIsin(e, isin)}
-                        title="Click to copy ISIN"
-                        className="flex items-center gap-0.5 px-1 py-0.2 rounded text-[7px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/30 cursor-pointer transition-all font-mono select-none"
-                      >
-                        {copiedIsin === isin ? 'Copied!' : isin}
-                        {copiedIsin !== isin && <Copy size={5} />}
-                      </span>
                     </div>
                     <div className="flex items-center gap-1 shrink-0 text-right">
                       <span className={`font-semibold text-[10px] ${stock.perf_pct?.startsWith('+') ? 'text-green-500' : stock.perf_pct?.startsWith('-') ? 'text-red-500' : 'text-slate-400'}`}>
@@ -238,20 +252,25 @@ export default function PortfoliosTab() {
               <Zap size={12} className="text-amber-400" /> Cluster Signals
             </span>
             <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
-              {clusterItems.slice(0, 3).map((item) => (
-                <div key={item.ticker} className="flex items-center justify-between text-[11px] gap-1">
-                  <button
-                    onClick={() => openSymbolOverview(item.ticker)}
-                    className="font-extrabold text-cyan-400 hover:underline font-mono truncate"
-                    title={`Bought by: ${item.buyer_names.join(', ')}`}
-                  >
-                    {item.ticker}
-                  </button>
-                  <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded font-mono">
-                    ⚡ {item.distinct_buyers_count} buyers
-                  </span>
-                </div>
-              ))}
+              {clusterItems.slice(0, 3).map((item) => {
+                const details = getTickerDetails(item.ticker);
+                const companyName = item.company_name || details.name;
+
+                return (
+                  <div key={item.ticker} className="flex items-center justify-between text-[11px] gap-1">
+                    <button
+                      onClick={() => openSymbolOverview(item.ticker)}
+                      className="font-extrabold text-cyan-400 hover:underline font-mono truncate max-w-[110px]"
+                      title={`${item.ticker} (${companyName}) - Bought by: ${item.buyer_names.join(', ')}`}
+                    >
+                      {item.ticker} <span className="text-[9px] text-slate-400 font-normal font-sans">({companyName})</span>
+                    </button>
+                    <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded font-mono shrink-0">
+                      ⚡ {item.distinct_buyers_count} buyers
+                    </span>
+                  </div>
+                );
+              })}
               {clusterItems.length === 0 && (
                 <div className="text-[10px] text-slate-500 italic">No clusters detected</div>
               )}
