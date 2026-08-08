@@ -7,6 +7,7 @@ import PersonCard from '../components/PersonCard';
 import { Plus, Copy, Maximize2, Flame, Zap } from 'lucide-react';
 import { openSymbolOverview } from '../utils/symbolHelper';
 import HotStocksModal from '../components/HotStocksModal';
+import ClustersModal from '../components/ClustersModal';
 
 
 
@@ -65,6 +66,7 @@ export default function PortfoliosTab() {
   const [sortBy, setSortBy] = useState('recent_trade');
   const [showAdd, setShowAdd] = useState(false);
   const [showHotStocksModal, setShowHotStocksModal] = useState(false);
+  const [showClustersModal, setShowClustersModal] = useState(false);
   const [copiedIsin, setCopiedIsin] = useState(null);
   
   const handleCopyIsin = (e, isin) => {
@@ -197,16 +199,19 @@ export default function PortfoliosTab() {
             </div>
           </div>
 
-          {/* Card 3: Hot Stocks */}
-          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
+          {/* Card 3: Hot Stocks (Most Traded Volume) */}
+          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all" title="Ranked by highest total trade filing volume (Buys + Sells)">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider flex items-center gap-1">
-                <Flame size={12} className="text-amber-400" /> Hot stocks (60d)
-              </span>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                  <Flame size={12} className="text-amber-400" /> Most Traded (60d)
+                </span>
+                <span className="text-[8px] text-slate-500 block font-sans font-medium">Buys & Sells Volume</span>
+              </div>
               <button
                 onClick={() => setShowHotStocksModal(true)}
                 className="text-[9px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-0.5 transition-colors"
-                title="Expand Top 10 Hot Stocks"
+                title="Expand Top 10 Most Traded Stocks"
               >
                 <span>Top 10</span>
                 <Maximize2 size={9} />
@@ -247,10 +252,23 @@ export default function PortfoliosTab() {
           </div>
 
           {/* Card 4: Co-Buying Cluster Signals */}
-          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
-            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider flex items-center gap-1">
-              <Zap size={12} className="text-amber-400" /> Cluster Signals
-            </span>
+          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all" title="Ranked by multiple distinct insiders buying the same stock">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                  <Zap size={12} className="text-cyan-400" /> Multi-Insider Buys
+                </span>
+                <span className="text-[8px] text-slate-500 block font-sans font-medium">2+ Insiders Buying Same Stock</span>
+              </div>
+              <button
+                onClick={() => setShowClustersModal(true)}
+                className="text-[9px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-0.5 transition-colors"
+                title="Expand Top 10 Cluster Signals"
+              >
+                <span>Top 10</span>
+                <Maximize2 size={9} />
+              </button>
+            </div>
             <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
               {clusterItems.slice(0, 3).map((item) => {
                 const details = getTickerDetails(item.ticker);
@@ -265,7 +283,7 @@ export default function PortfoliosTab() {
                     >
                       {item.ticker} <span className="text-[9px] text-slate-400 font-normal font-sans">({companyName})</span>
                     </button>
-                    <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded font-mono shrink-0">
+                    <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded font-mono shrink-0" title={`Bought by ${item.distinct_buyers_count} different insiders`}>
                       ⚡ {item.distinct_buyers_count} buyers
                     </span>
                   </div>
@@ -442,6 +460,14 @@ export default function PortfoliosTab() {
         <HotStocksModal
           hotStocks={insights?.hot_stocks || []}
           onClose={() => setShowHotStocksModal(false)}
+        />
+      )}
+
+      {/* Expandable Top 10 Cluster Signals Modal */}
+      {showClustersModal && (
+        <ClustersModal
+          clusters={clusterItems}
+          onClose={() => setShowClustersModal(false)}
         />
       )}
     </div>
