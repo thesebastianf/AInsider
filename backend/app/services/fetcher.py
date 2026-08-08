@@ -19,20 +19,46 @@ from app.config import settings
 logger = logging.getLogger("ainsider.fetcher")
 
 def fetch_wikipedia_photo(name: str) -> Optional[str]:
-    """Attempt to fetch a 300px thumbnail from Wikipedia for a person's name."""
+    """Attempt to fetch a 300px thumbnail from Wikipedia for a person's name using direct lookup and search fallback."""
+    if not name:
+        return None
+        
+    headers = {'User-Agent': 'AInsiderTrackerBot/1.0 (admin@ainsidertracker.com)'}
+    clean_name = name.strip()
+
+    # 1. Try direct title match
     try:
-        url = f"https://en.wikipedia.org/w/api.php?action=query&titles={name.replace(' ', '%20')}&prop=pageimages&format=json&pithumbsize=300"
-        # Must include User-Agent with email per Wikimedia policy
-        headers = {'User-Agent': 'AInsiderTrackerBot/1.0 (admin@ainsidertracker.com)'}
+        url = f"https://en.wikipedia.org/w/api.php?action=query&titles={clean_name.replace(' ', '%20')}&prop=pageimages&format=json&pithumbsize=300"
         resp = httpx.get(url, headers=headers, timeout=5.0)
         if resp.status_code == 200:
             pages = resp.json().get("query", {}).get("pages", {})
-            for _, page in pages.items():
-                if "thumbnail" in page:
+            for page_id, page in pages.items():
+                if page_id != "-1" and "thumbnail" in page:
                     return page["thumbnail"].get("source")
     except Exception as e:
-        logger.debug(f"Could not fetch Wikipedia photo for {name}: {e}")
+        logger.debug(f"Direct Wikipedia photo lookup failed for {name}: {e}")
+
+    # 2. Search fallback: Query Wikipedia search API for top article match
+    try:
+        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={clean_name.replace(' ', '%20')}&format=json&srlimit=1"
+        resp = httpx.get(search_url, headers=headers, timeout=5.0)
+        if resp.status_code == 200:
+            results = resp.json().get("query", {}).get("search", [])
+            if results:
+                page_title = results[0].get("title")
+                if page_title:
+                    img_url = f"https://en.wikipedia.org/w/api.php?action=query&titles={page_title.replace(' ', '%20')}&prop=pageimages&format=json&pithumbsize=300"
+                    img_resp = httpx.get(img_url, headers=headers, timeout=5.0)
+                    if img_resp.status_code == 200:
+                        pages = img_resp.json().get("query", {}).get("pages", {})
+                        for page_id, page in pages.items():
+                            if page_id != "-1" and "thumbnail" in page:
+                                return page["thumbnail"].get("source")
+    except Exception as e:
+        logger.debug(f"Search fallback Wikipedia photo lookup failed for {name}: {e}")
+
     return None
+
 
 
 @dataclass

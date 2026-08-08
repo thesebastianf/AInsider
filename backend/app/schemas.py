@@ -17,6 +17,7 @@ class TradeOut(BaseModel):
     target_person_id: int
     person_name: Optional[str] = None
     person_category: Optional[str] = None
+    person_photo_url: Optional[str] = None
     ticker: str
     type: str
     amount_range: str
@@ -31,6 +32,30 @@ class TradeOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class LookupPersonOut(BaseModel):
+    id: int
+    name: str
+    display_name: Optional[str] = None
+    category: str
+    photo_url: Optional[str] = None
+    is_tracked: bool
+    trade_count: int = 0
+
+
+class LookupAssetOut(BaseModel):
+    ticker: str
+    isin: Optional[str] = None
+    company_name: Optional[str] = None
+    trade_count: int = 0
+    distinct_insiders_count: int = 0
+
+
+class LookupResultOut(BaseModel):
+    persons: List[LookupPersonOut]
+    assets: List[LookupAssetOut]
+
 
 
 class TradeList(BaseModel):
@@ -93,6 +118,69 @@ class AssetPerformanceOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AssetInsiderSummary(BaseModel):
+    person_id: int
+    person_name: str
+    person_category: str
+    photo_url: Optional[str] = None
+    trade_count: int
+    buy_count: int
+    sell_count: int
+
+
+class AssetSummaryOut(BaseModel):
+    ticker: str
+    isin: Optional[str] = None
+    company_name: Optional[str] = None
+    trade_count: int
+    buy_count: int
+    sell_count: int
+    distinct_insiders_count: int
+    last_trade_date: Optional[date] = None
+    current_price: Optional[float] = None
+    ytd_performance_pct: Optional[float] = None
+
+
+class AssetListOut(BaseModel):
+    assets: List[AssetSummaryOut]
+    total: int
+
+
+class ClusterSignalOut(BaseModel):
+    ticker: str
+    isin: Optional[str] = None
+    company_name: Optional[str] = None
+    distinct_buyers_count: int
+    buyer_names: List[str]
+    trade_count: int
+    first_buy_date: Optional[date] = None
+    latest_buy_date: Optional[date] = None
+    current_price: Optional[float] = None
+    ytd_performance_pct: Optional[float] = None
+
+
+class ClusterListOut(BaseModel):
+    clusters: List[ClusterSignalOut]
+    total: int
+
+
+class AssetDetailOut(BaseModel):
+    ticker: str
+    isin: Optional[str] = None
+    company_name: Optional[str] = None
+    current_price: Optional[float] = None
+    ytd_performance_pct: Optional[float] = None
+    trade_count: int
+    buy_count: int
+    sell_count: int
+    distinct_insiders_count: int
+    cluster_signal: Optional[ClusterSignalOut] = None
+    insiders: List[AssetInsiderSummary]
+    trades: List[TradeOut]
+
+
 
 
 # ═══════════════════════════════════════════════════════════════

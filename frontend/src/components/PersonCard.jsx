@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
 import { Star, Bell, Trash2, User, Copy, X, Loader2, Plus, Pencil, RotateCcw } from 'lucide-react';
 import { updateDisplayName, uploadPersonPhoto, deletePersonPhoto } from '../api/client';
+import { openSymbolOverview } from '../utils/symbolHelper';
+
 
 const TICKER_INFO = {
   AAPL: { name: 'Apple Inc.', isin: 'US0378331005' },
@@ -395,7 +397,13 @@ export default function PersonCard({ person, performance, onToggleFollow, onTogg
                           }`}>
                             {t.type}
                           </span>
-                          <span className="font-bold text-slate-200">{t.ticker}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openSymbolOverview(t.ticker); }}
+                            className="font-bold text-cyan-400 hover:text-cyan-300 hover:underline cursor-pointer transition-colors"
+                            title="Click to view asset overview"
+                          >
+                            {t.ticker}
+                          </button>
                           {performance?.[t.ticker]?.is_delisted && (
                             <span className="px-1 py-0.2 rounded text-[7px] bg-red-500/15 text-red-400 border border-red-500/20 uppercase font-bold tracking-wider shrink-0" title="Ticker not found on yfinance or delisted">
                               Unknown

@@ -272,33 +272,62 @@ def get_insights(db: Session = Depends(get_db)):
     hot_stocks = []
     hot_stock = None
     try:
+        from app.routers.trades import resolve_ticker_and_isin
+        from sqlalchemy import case, distinct
         sixty_days_ago = date.today() - timedelta(days=60)
         hot_q = (
-            db.query(Trade.ticker, func.count(Trade.id).label("trade_count"))
+            db.query(
+                Trade.ticker,
+                func.count(Trade.id).label("trade_count"),
+                func.sum(case((Trade.type == "BUY", 1), else_=0)).label("buy_count"),
+                func.sum(case((Trade.type == "SELL", 1), else_=0)).label("sell_count"),
+                func.count(distinct(Trade.target_person_id)).label("distinct_persons"),
+                func.max(Trade.trade_date).label("last_trade_date"),
+            )
             .filter(Trade.trade_date >= sixty_days_ago)
             .group_by(Trade.ticker)
             .order_by(func.count(Trade.id).desc())
-            .limit(5)
+            .limit(10)
             .all()
         )
-        for tick, cnt in hot_q:
+        for row in hot_q:
+            tick = row.ticker
+            cnt = row.trade_count
+            buy_cnt = int(row.buy_count or 0)
+            sell_cnt = int(row.sell_count or 0)
+            distinct_cnt = int(row.distinct_persons or 0)
+            max_date = row.last_trade_date
+
+            resolved_ticker, isin, company_name = resolve_ticker_and_isin(tick)
             ap = db.query(AssetPerformance).filter(AssetPerformance.ticker == tick).first()
             perf_pct = ap.ytd_performance_pct if ap else 0.0
+
             hot_stocks.append({
                 "ticker": tick,
+                "isin": isin,
+                "company_name": company_name,
                 "perf_pct": f"{perf_pct:+.1f}%" if perf_pct else "0.0%",
-                "trades_count": cnt
+                "trades_count": cnt,
+                "buy_count": buy_cnt,
+                "sell_count": sell_cnt,
+                "distinct_persons": distinct_cnt,
+                "last_trade_date": max_date.isoformat() if max_date else None,
             })
         if hot_stocks:
             hot_stock = hot_stocks[0]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Failed calculating hot stocks: {e}")
         
     if not hot_stock:
         hot_stock = {
             "ticker": "N/A",
+            "isin": "",
+            "company_name": "",
             "perf_pct": "N/A",
-            "trades_count": 0
+            "trades_count": 0,
+            "buy_count": 0,
+            "sell_count": 0,
+            "distinct_persons": 0,
         }
     if not hot_stocks:
         hot_stocks = [hot_stock]

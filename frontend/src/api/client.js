@@ -62,11 +62,30 @@ export const uploadPersonPhoto = (personId, file) => {
 export const deletePersonPhoto = (personId) =>
   request(`/persons/${personId}/upload-photo`, { method: 'DELETE' });
 
-// ═══ Trades ══════════════════════════════════════════════════
+// ═══ Trades & Assets ═════════════════════════════════════════
 export const getTrades = (params = {}) => {
   const qs = new URLSearchParams(params).toString();
   return request(`/trades${qs ? `?${qs}` : ''}`);
 };
+
+export const getAssets = (params = {}) => {
+  const qs = new URLSearchParams(params).toString();
+  return request(`/trades/assets${qs ? `?${qs}` : ''}`);
+};
+
+export const getAssetDetail = (symbolOrIsin) =>
+  request(`/trades/symbols/${encodeURIComponent(symbolOrIsin)}`);
+
+export const unifiedLookup = (q) =>
+  request(`/trades/lookup?q=${encodeURIComponent(q)}`);
+
+export const getClusters = (params = {}) => {
+  const qs = new URLSearchParams(params).toString();
+  return request(`/trades/clusters${qs ? `?${qs}` : ''}`);
+};
+
+
+
 
 // ═══ Performance ═════════════════════════════════════════════
 export const getPerformance = (ticker) =>

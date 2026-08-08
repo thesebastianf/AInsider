@@ -1,10 +1,14 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
-import { getPersons, toggleFollow, getAllPerformance, createPerson, getAvailablePersons, trackPerson, toggleSubscription, getInsights } from '../api/client';
+import { getPersons, toggleFollow, getAllPerformance, createPerson, getAvailablePersons, trackPerson, toggleSubscription, getInsights, getClusters } from '../api/client';
 import SearchBar from '../components/SearchBar';
 import CategoryPills from '../components/CategoryPills';
 import PersonCard from '../components/PersonCard';
-import { Plus, Copy } from 'lucide-react';
+import { Plus, Copy, Maximize2, Flame, Zap } from 'lucide-react';
+import { openSymbolOverview } from '../utils/symbolHelper';
+import HotStocksModal from '../components/HotStocksModal';
+
+
 
 const TICKER_INFO = {
   AAPL: { name: 'Apple Inc.', isin: 'US0378331005' },
@@ -38,6 +42,7 @@ export default function PortfoliosTab() {
   const [category, setCategory] = useState('All');
   const [sortBy, setSortBy] = useState('recent_trade');
   const [showAdd, setShowAdd] = useState(false);
+  const [showHotStocksModal, setShowHotStocksModal] = useState(false);
   const [copiedIsin, setCopiedIsin] = useState(null);
   
   const handleCopyIsin = (e, isin) => {
@@ -60,6 +65,8 @@ export default function PortfoliosTab() {
   const { data: personsData, loading, error, refetch } = useApi(fetchPersons, [search, category, sortBy]);
   const { data: perfData } = useApi(getAllPerformance, []);
   const { data: insights } = useApi(getInsights, []);
+  const { data: clustersData } = useApi(() => getClusters({ limit: 5 }), []);
+  const clusterItems = clustersData?.clusters || [];
 
   // Build performance lookup
   const perfMap = {};
@@ -103,12 +110,12 @@ export default function PortfoliosTab() {
     if (!form.name) return;
     try {
       // Creates a new person with is_tracked=True on backend
-      await createPerson({ ...form, is_tracked: true });
+      await createPerson(form);
       setShowAdd(false);
       setForm({ name: '', category: 'Congress', description: '', photo_url: '' });
       refetch();
     } catch (err) {
-      alert(err.message || 'Failed to track custom person');
+      console.error('Failed to create person:', err);
     }
   };
 
@@ -171,15 +178,34 @@ export default function PortfoliosTab() {
 
           {/* Card 3: Hot Stocks */}
           <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
-            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Hot stocks (60d)</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider flex items-center gap-1">
+                <Flame size={12} className="text-amber-400" /> Hot stocks (60d)
+              </span>
+              <button
+                onClick={() => setShowHotStocksModal(true)}
+                className="text-[9px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-0.5 transition-colors"
+                title="Expand Top 10 Hot Stocks"
+              >
+                <span>Top 10</span>
+                <Maximize2 size={9} />
+              </button>
+            </div>
+
             <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
               {insights.hot_stocks && insights.hot_stocks.slice(0, 3).map((stock, idx) => {
-                const isin = getTickerIsin(stock.ticker);
+                const isin = stock.isin || getTickerIsin(stock.ticker);
                 return (
                   <div key={stock.ticker} className="flex items-center justify-between text-[11px] gap-1">
                     <div className="flex items-center gap-1 min-w-0">
                       <span className="text-[9px] text-slate-500 font-mono">#{idx+1}</span>
-                      <span className="font-bold text-slate-200 truncate">{stock.ticker}</span>
+                      <button
+                        onClick={() => openSymbolOverview(stock.ticker)}
+                        className="font-bold text-slate-200 hover:text-cyan-400 hover:underline transition-colors"
+                        title="Click to view asset overview"
+                      >
+                        {stock.ticker}
+                      </button>
                       
                       {/* Copyable ISIN */}
                       <span 
@@ -202,6 +228,32 @@ export default function PortfoliosTab() {
               })}
               {(!insights.hot_stocks || insights.hot_stocks.length === 0) && (
                 <div className="text-[10px] text-slate-500 italic">No recent trades</div>
+              )}
+            </div>
+          </div>
+
+          {/* Card 4: Co-Buying Cluster Signals */}
+          <div className="bg-surface/50 border border-border/80 rounded-xl p-3 flex flex-col justify-between shadow-md hover:border-border-bright transition-all">
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider flex items-center gap-1">
+              <Zap size={12} className="text-amber-400" /> Cluster Signals
+            </span>
+            <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
+              {clusterItems.slice(0, 3).map((item) => (
+                <div key={item.ticker} className="flex items-center justify-between text-[11px] gap-1">
+                  <button
+                    onClick={() => openSymbolOverview(item.ticker)}
+                    className="font-extrabold text-cyan-400 hover:underline font-mono truncate"
+                    title={`Bought by: ${item.buyer_names.join(', ')}`}
+                  >
+                    {item.ticker}
+                  </button>
+                  <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded font-mono">
+                    ⚡ {item.distinct_buyers_count} buyers
+                  </span>
+                </div>
+              ))}
+              {clusterItems.length === 0 && (
+                <div className="text-[10px] text-slate-500 italic">No clusters detected</div>
               )}
             </div>
           </div>
@@ -365,6 +417,14 @@ export default function PortfoliosTab() {
             ))
         )}
       </div>
+
+      {/* Expandable Top 10 Hot Stocks Modal */}
+      {showHotStocksModal && (
+        <HotStocksModal
+          hotStocks={insights?.hot_stocks || []}
+          onClose={() => setShowHotStocksModal(false)}
+        />
+      )}
     </div>
   );
 }

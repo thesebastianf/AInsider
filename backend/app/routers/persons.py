@@ -243,6 +243,16 @@ def toggle_tracking(
         if not existing_sub:
             db_sub = Subscription(user_id="default", target_person_id=person.id)
             db.add(db_sub)
+
+        # Auto-fetch photo if missing
+        if not person.photo_url and not person.custom_photo_url:
+            try:
+                from app.services.fetcher import fetch_wikipedia_photo
+                photo = fetch_wikipedia_photo(person.name)
+                if photo:
+                    person.photo_url = photo
+            except Exception as e:
+                logger.debug(f"Failed to auto-fetch photo for {person.name}: {e}")
             
         # Trigger background price update to fetch historical values and calculate returns immediately
         if background_tasks:
@@ -255,6 +265,22 @@ def toggle_tracking(
     db.commit()
     db.refresh(person)
     return {"id": person.id, "is_tracked": person.is_tracked}
+
+
+@router.post("/fetch-photos")
+def fetch_missing_photos(db: Session = Depends(get_db)):
+    """Backfill missing Wikipedia photos for persons without a photo."""
+    from app.services.fetcher import fetch_wikipedia_photo
+    persons = db.query(TargetPerson).filter(TargetPerson.photo_url.is_(None)).all()
+    updated_count = 0
+    for p in persons:
+        url = fetch_wikipedia_photo(p.name)
+        if url:
+            p.photo_url = url
+            updated_count += 1
+    if updated_count > 0:
+        db.commit()
+    return {"updated": updated_count, "total_checked": len(persons)}
 
 
 @router.get("/{person_id}", response_model=PersonOut)

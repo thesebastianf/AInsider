@@ -1,8 +1,11 @@
 import { useState, useCallback } from 'react';
 import { useApi } from '../hooks/useApi';
 import { getTrades } from '../api/client';
-import { Activity, RefreshCw, Calendar, ExternalLink } from 'lucide-react';
+import { Activity, RefreshCw, Calendar, ExternalLink, Download } from 'lucide-react';
 import AIScoreBadge from '../components/AIScoreBadge';
+import { openSymbolOverview } from '../utils/symbolHelper';
+import { exportToCSV, exportToJSON } from '../utils/exportUtils';
+
 
 export default function FeedTab() {
   const [category, setCategory] = useState('All');
@@ -18,6 +21,30 @@ export default function FeedTab() {
   const { data: tradesData, loading, error, refetch } = useApi(fetchTradesList, [category, tradeType]);
   const trades = tradesData?.trades || [];
 
+  const handleExportCSV = () => {
+    if (!trades.length) return;
+    const exportRows = trades.map(t => ({
+      Filer: t.person_name,
+      Category: t.person_category,
+      Ticker: t.ticker,
+      Action: t.type,
+      AmountRange: t.amount_range,
+      TradeDate: t.trade_date,
+      FilingDate: t.filing_date || '',
+      PriceAtTransaction: t.price_at_transaction || '',
+      ReturnSincePurchasePct: t.return_since_purchase_pct || '',
+      AIScore: t.ai_score || '',
+      AISummary: t.ai_summary || '',
+      SourceURL: t.source_url || '',
+    }));
+    exportToCSV(`insider_feed_${category.toLowerCase()}_${tradeType.toLowerCase()}`, exportRows);
+  };
+
+  const handleExportJSON = () => {
+    if (!trades.length) return;
+    exportToJSON(`insider_feed_${category.toLowerCase()}_${tradeType.toLowerCase()}`, trades);
+  };
+
   return (
     <div className="px-5 py-5 space-y-5 animate-fade-in">
       <div className="flex justify-between items-center">
@@ -25,10 +52,35 @@ export default function FeedTab() {
           <Activity size={16} className="text-cyan-400" />
           <span className="text-sm font-semibold text-slate-200">Live Transaction Feed</span>
         </div>
-        <button onClick={refetch} disabled={loading} title="Refresh Feed"
-          className="p-1.5 rounded-lg bg-slate-800/80 border border-slate-700/50 text-slate-400 hover:text-white transition-colors disabled:opacity-50">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-        </button>
+
+        <div className="flex items-center gap-2">
+          {/* Export CSV / JSON */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleExportCSV}
+              disabled={!trades.length}
+              title="Export feed transactions to CSV"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/50 text-[11px] font-semibold text-slate-300 hover:text-white hover:bg-slate-700 transition-colors disabled:opacity-40"
+            >
+              <Download size={12} className="text-cyan-400" />
+              <span>CSV</span>
+            </button>
+            <button
+              onClick={handleExportJSON}
+              disabled={!trades.length}
+              title="Export feed transactions to JSON"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/50 text-[11px] font-semibold text-slate-300 hover:text-white hover:bg-slate-700 transition-colors disabled:opacity-40"
+            >
+              <Download size={12} className="text-purple-400" />
+              <span>JSON</span>
+            </button>
+          </div>
+
+          <button onClick={refetch} disabled={loading} title="Refresh Feed"
+            className="p-1.5 rounded-lg bg-slate-800/80 border border-slate-700/50 text-slate-400 hover:text-white transition-colors disabled:opacity-50">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
       </div>
 
       {/* Filter Row */}
@@ -89,7 +141,13 @@ export default function FeedTab() {
 
               <div className="flex items-center justify-between p-3 bg-surface-2 rounded-lg border border-border">
                 <div>
-                  <div className="text-sm font-bold text-slate-800 dark:text-slate-100">{trade.ticker}</div>
+                  <button
+                    onClick={() => openSymbolOverview(trade.ticker)}
+                    className="text-sm font-bold text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 transition-colors"
+                    title="Click to view asset overview & all insider transactions"
+                  >
+                    {trade.ticker}
+                  </button>
                   <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
                     <Calendar size={10} />
                     {new Date(trade.trade_date).toLocaleDateString()}
