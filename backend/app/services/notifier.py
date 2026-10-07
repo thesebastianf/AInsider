@@ -5,7 +5,10 @@ Providers: Telegram, Gotify, Pushover, Discord, Slack, Ntfy.
 All configured via DB (UI-editable).
 """
 
+import html
 import logging
+import threading
+import time
 from typing import Dict, List
 
 import httpx
@@ -49,18 +52,51 @@ def _format_message(
 # Provider Implementations
 # ═══════════════════════════════════════════════════════════════
 
+# Telegram allows ~1 message/second per chat and caps a message at 4096 chars.
+TELEGRAM_MAX_LEN = 4096
+TELEGRAM_MIN_INTERVAL_S = 1.1
+TELEGRAM_MAX_RETRY_AFTER_S = 60
+_telegram_lock = threading.Lock()
+_telegram_last_sent = 0.0
+
+
 def _send_telegram(config: dict, title: str, message: str) -> bool:
+    global _telegram_last_sent
     token = config.get("bot_token", "")
     chat_id = config.get("chat_id", "")
     if not token or not chat_id:
         return False
-    resp = httpx.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"},
-        timeout=10.0,
-    )
-    resp.raise_for_status()
-    return True
+
+    # Messages are sent with parse_mode=HTML, so raw text (AI summaries, company
+    # names like "S&P 500" or "AT&T", "<5%") must be escaped, otherwise Telegram
+    # rejects the whole message with "can't parse entities".
+    text = html.escape(message, quote=False)
+    if len(text) > TELEGRAM_MAX_LEN:
+        text = text[: TELEGRAM_MAX_LEN - 1] + "…"
+
+    with _telegram_lock:
+        for attempt in range(3):
+            wait = TELEGRAM_MIN_INTERVAL_S - (time.monotonic() - _telegram_last_sent)
+            if wait > 0:
+                time.sleep(wait)
+            resp = httpx.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+                timeout=10.0,
+            )
+            _telegram_last_sent = time.monotonic()
+            if resp.status_code == 429 and attempt < 2:
+                try:
+                    retry_after = int(resp.json().get("parameters", {}).get("retry_after", 5))
+                except Exception:
+                    retry_after = 5
+                logger.warning(f"Telegram rate limit hit, retrying in {retry_after}s")
+                time.sleep(min(retry_after, TELEGRAM_MAX_RETRY_AFTER_S))
+                continue
+            if resp.status_code >= 400:
+                raise RuntimeError(f"Telegram API {resp.status_code}: {resp.text[:200]}")
+            return True
+    return False
 
 
 def _send_gotify(config: dict, title: str, message: str) -> bool:
@@ -157,6 +193,11 @@ def send_notification(provider_config: NotificationConfig, title: str, message: 
         return sender(provider_config.config_json or {}, title, message)
     except Exception as e:
         logger.error(f"Notification via {provider_config.name} failed: {e}")
+        try:
+            from app.routers.system import add_log
+            add_log("WARN", f"Notification via {provider_config.name} failed: {str(e)[:150]}")
+        except Exception:
+            pass
         return False
 
 
@@ -205,6 +246,41 @@ def notify_all_enabled(
         else:
             logger.warning(f"Notification failed for {cfg.name} ({cfg.provider_type})")
 
+    return results
+
+
+def notify_digest(db: Session, person_name: str, trades: List[dict]) -> Dict[str, bool]:
+    """
+    Send ONE summary notification for many new trades of the same person
+    (e.g. a 13F holdings snapshot with 100+ positions) instead of flooding
+    every provider with one message per trade.
+    Each trade dict has: trade_type, ticker, amount, ai_score, trade_date.
+    """
+    max_lines = 20
+    lines = []
+    for t in trades[:max_lines]:
+        emoji = "📈" if t["trade_type"] == "BUY" else "📉"
+        score = f" · AI {t['ai_score']}/10" if t.get("ai_score") else ""
+        date_part = f" · {t['trade_date']}" if t.get("trade_date") else ""
+        lines.append(f"{emoji} {t['trade_type']} {t['ticker']} · {t['amount']}{date_part}{score}")
+    if len(trades) > max_lines:
+        lines.append(f"… and {len(trades) - max_lines} more (see app)")
+
+    title = f"🚨 {person_name}: {len(trades)} new trades"
+    message = (
+        f"🚨 [AI]nsider Alert\n\n"
+        f"👤 {person_name}\n"
+        f"📦 {len(trades)} new trades\n\n" + "\n".join(lines)
+    )
+
+    configs = (
+        db.query(NotificationConfig)
+        .filter(NotificationConfig.is_enabled == True)  # noqa: E712
+        .all()
+    )
+    results = {}
+    for cfg in configs:
+        results[cfg.name] = send_notification(cfg, title, message)
     return results
 
 

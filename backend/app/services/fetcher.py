@@ -9,6 +9,7 @@ from typing import List, Optional
 from dataclasses import dataclass
 import httpx
 import re
+import time
 from sqlalchemy.orm import Session
 from abc import ABC, abstractmethod
 
@@ -67,63 +68,127 @@ FUND_MANAGER_MAPPING = {
 }
 
 
+_WIKI_API = "https://en.wikipedia.org/w/api.php"
+_WIKI_HEADERS = {"User-Agent": "AInsiderTracker/1.0 (https://github.com/thesebastianf/AInsider)"}
+_HONORIFICS = {"HON", "HONORABLE", "MR", "MRS", "MS", "DR", "SEN", "SENATOR", "REP", "REPRESENTATIVE", "PROF"}
+_NAME_SUFFIXES = {"JR", "SR", "II", "III", "IV"}
+# Avoid hammering Wikipedia: remember misses for a day, back off for an hour on 429.
+_PHOTO_MISS_TTL_S = 24 * 3600
+_PHOTO_RATE_LIMIT_BACKOFF_S = 3600
+_photo_misses: dict[str, float] = {}
+_photo_backoff_until = 0.0
+
+
+def _clean_lookup_name(name: str) -> tuple[str, Optional[str]]:
+    """
+    Turn feed names into something Wikipedia can match.
+    "Hon. Thomas H. Tuberville" -> "Thomas Tuberville"; "PELOSI NANCY" -> "Pelosi Nancy".
+    Returns (cleaned_name, reversed_name) where reversed_name is the
+    "First Last" variant for all-caps "LAST FIRST M" names (SEC Form 4 style).
+    """
+    raw_tokens = re.sub(r"[,()]", " ", name).split()
+    all_caps = name.upper() == name and any(c.isalpha() for c in name)
+    tokens = []
+    for tok in raw_tokens:
+        bare = tok.strip(".").upper()
+        if bare in _HONORIFICS or bare in _NAME_SUFFIXES:
+            continue
+        if len(bare) == 1:  # middle initial
+            continue
+        tokens.append(tok.strip(".").title() if all_caps else tok.strip("."))
+    cleaned = " ".join(tokens)
+    reversed_name = None
+    if all_caps and len(tokens) >= 2:
+        reversed_name = " ".join(tokens[1:] + tokens[:1])
+    return cleaned, reversed_name
+
+
+def _wiki_thumbnail(params: dict, must_contain: Optional[str] = None) -> Optional[str]:
+    """Run a Wikipedia pageimages query and return the first thumbnail URL."""
+    global _photo_backoff_until
+    query = {
+        "action": "query", "format": "json", "redirects": 1,
+        "prop": "pageimages", "piprop": "thumbnail", "pithumbsize": 300,
+        **params,
+    }
+    resp = httpx.get(_WIKI_API, params=query, headers=_WIKI_HEADERS, timeout=5.0)
+    if resp.status_code == 429:
+        _photo_backoff_until = time.monotonic() + _PHOTO_RATE_LIMIT_BACKOFF_S
+        logger.warning("Wikipedia rate limit hit, pausing photo lookups for 1h")
+        return None
+    if resp.status_code != 200:
+        return None
+    pages = resp.json().get("query", {}).get("pages", {})
+    # generator=search returns pages with an "index" (rank); keep that order
+    for page in sorted(pages.values(), key=lambda p: p.get("index", 0)):
+        if "thumbnail" not in page:
+            continue
+        if must_contain and must_contain.lower() not in page.get("title", "").lower():
+            continue
+        return page["thumbnail"].get("source")
+    return None
+
+
 def fetch_wikipedia_photo(name: str) -> Optional[str]:
     """Attempt to fetch a photo for a person or fund manager using curated matches and Wikipedia API."""
     if not name:
         return None
-        
+
     clean_name = name.strip()
     upper_name = clean_name.upper()
 
-    # 1. Check direct match in curated photos
+    # 1. Curated photos (key must be contained in the name, never the other way
+    #    round, otherwise short names like "Mark" would match "MARK WARNER")
     for key, photo_url in CURATED_PERSON_PHOTOS.items():
-        if key in upper_name or upper_name in key:
+        if key in upper_name:
             return photo_url
 
     # 2. Check if name maps to a fund manager (e.g. Scion Asset Management -> Michael Burry)
     target_search_name = clean_name
+    reversed_name = None
     for fund_key, manager_name in FUND_MANAGER_MAPPING.items():
         if fund_key in upper_name:
             target_search_name = manager_name
-            # Check if manager has curated photo
-            manager_upper = manager_name.upper()
-            if manager_upper in CURATED_PERSON_PHOTOS:
-                return CURATED_PERSON_PHOTOS[manager_upper]
+            if manager_name.upper() in CURATED_PERSON_PHOTOS:
+                return CURATED_PERSON_PHOTOS[manager_name.upper()]
             break
+    else:
+        target_search_name, reversed_name = _clean_lookup_name(clean_name)
+        for key, photo_url in CURATED_PERSON_PHOTOS.items():
+            if key in target_search_name.upper() or (reversed_name and key in reversed_name.upper()):
+                return photo_url
 
-    headers = {'User-Agent': 'AInsiderTrackerBot/1.0 (admin@ainsidertracker.com)'}
+    if not target_search_name:
+        return None
+    now = time.monotonic()
+    if now < _photo_backoff_until:
+        return None
+    if now - _photo_misses.get(target_search_name, -_PHOTO_MISS_TTL_S) < _PHOTO_MISS_TTL_S:
+        return None
 
-    # 3. Try direct Wikipedia title match for search target
+    candidates = [target_search_name] + ([reversed_name] if reversed_name else [])
     try:
-        url = f"https://en.wikipedia.org/w/api.php?action=query&titles={target_search_name.replace(' ', '%20')}&prop=pageimages&format=json&pithumbsize=300"
-        resp = httpx.get(url, headers=headers, timeout=5.0)
-        if resp.status_code == 200:
-            pages = resp.json().get("query", {}).get("pages", {})
-            for page_id, page in pages.items():
-                if page_id != "-1" and "thumbnail" in page:
-                    return page["thumbnail"].get("source")
-    except Exception as e:
-        logger.debug(f"Direct Wikipedia photo lookup failed for {target_search_name}: {e}")
+        # 3. Direct title match (follows redirects, e.g. "Tommy Tuberville")
+        for candidate in candidates:
+            photo = _wiki_thumbnail({"titles": candidate})
+            if photo:
+                return photo
 
-    # 4. Search fallback: Query Wikipedia search API for top article match
-    try:
-        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={target_search_name.replace(' ', '%20')}&format=json&srlimit=1"
-        resp = httpx.get(search_url, headers=headers, timeout=5.0)
-        if resp.status_code == 200:
-            results = resp.json().get("query", {}).get("search", [])
-            if results:
-                page_title = results[0].get("title")
-                if page_title:
-                    img_url = f"https://en.wikipedia.org/w/api.php?action=query&titles={page_title.replace(' ', '%20')}&prop=pageimages&format=json&pithumbsize=300"
-                    img_resp = httpx.get(img_url, headers=headers, timeout=5.0)
-                    if img_resp.status_code == 200:
-                        pages = img_resp.json().get("query", {}).get("pages", {})
-                        for page_id, page in pages.items():
-                            if page_id != "-1" and "thumbnail" in page:
-                                return page["thumbnail"].get("source")
+        # 4. Search fallback. Only accept a hit whose title contains the last
+        #    name, so we don't attach a random person's photo.
+        for candidate in candidates:
+            last_name = candidate.split()[-1] if " " in candidate else None
+            photo = _wiki_thumbnail(
+                {"generator": "search", "gsrsearch": candidate, "gsrlimit": 3},
+                must_contain=last_name,
+            )
+            if photo:
+                return photo
     except Exception as e:
-        logger.debug(f"Search fallback Wikipedia photo lookup failed for {target_search_name}: {e}")
+        logger.debug(f"Wikipedia photo lookup failed for {target_search_name}: {e}")
+        return None
 
+    _photo_misses[target_search_name] = now
     return None
 
 

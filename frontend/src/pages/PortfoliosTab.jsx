@@ -175,11 +175,11 @@ export default function PortfoliosTab() {
             <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
               {(insights.most_active_list || (insights.most_active ? [insights.most_active] : [])).slice(0, 2).map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full overflow-hidden border border-border shrink-0 bg-surface-2 flex items-center justify-center text-[9px] font-bold text-slate-400">
-                    {item.photo_url ? (
-                      <img src={item.photo_url} className="w-full h-full object-cover" alt="" />
-                    ) : (
-                      item.name?.[0]
+                  <div className="relative w-5 h-5 rounded-full overflow-hidden border border-border shrink-0 bg-surface-2 flex items-center justify-center text-[9px] font-bold text-slate-400">
+                    {item.name?.[0]}
+                    {item.photo_url && (
+                      <img src={item.photo_url} className="absolute inset-0 w-full h-full object-cover" alt=""
+                        onError={e => { e.currentTarget.style.display = 'none'; }} />
                     )}
                   </div>
                   <div className="min-w-0 flex-1 flex justify-between items-center text-[11px]">
@@ -200,11 +200,11 @@ export default function PortfoliosTab() {
             <div className="mt-2 space-y-1.5 flex-1 flex flex-col justify-center">
               {(insights.outperf_list || (insights.biggest_outperformer ? [insights.biggest_outperformer] : [])).slice(0, 2).map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full overflow-hidden border border-border shrink-0 bg-surface-2 flex items-center justify-center text-[9px] font-bold text-slate-400">
-                    {item.photo_url ? (
-                      <img src={item.photo_url} className="w-full h-full object-cover" alt="" />
-                    ) : (
-                      item.name?.[0]
+                  <div className="relative w-5 h-5 rounded-full overflow-hidden border border-border shrink-0 bg-surface-2 flex items-center justify-center text-[9px] font-bold text-slate-400">
+                    {item.name?.[0]}
+                    {item.photo_url && (
+                      <img src={item.photo_url} className="absolute inset-0 w-full h-full object-cover" alt=""
+                        onError={e => { e.currentTarget.style.display = 'none'; }} />
                     )}
                   </div>
                   <div className="min-w-0 flex-1 flex justify-between items-center text-[11px]">
