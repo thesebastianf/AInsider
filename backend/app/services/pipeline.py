@@ -327,6 +327,13 @@ def run_pipeline() -> dict:
 
         stats["notifications_sent"] = _dispatch_notifications(db, pending_notifications)
 
+        try:
+            from app.services.hot_alerts import check_hot_stock_entries
+            check_hot_stock_entries(db)
+        except Exception as e:
+            logger.error(f"Hot stocks alert check failed: {e}")
+            add_log("WARN", f"Hot stocks alert check failed: {str(e)[:80]}")
+
         _runtime_overrides["last_pipeline_run"] = datetime.now()
 
         summary_msg = (
