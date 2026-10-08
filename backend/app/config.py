@@ -19,6 +19,17 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     DEBUG_MODE: bool = False
 
+    # ─── Notifications ────────────────────────────────────────
+    # Trades filed/traded longer ago than this are stored but not alerted
+    # (prevents floods when a feed re-delivers or backfills old history).
+    NOTIFY_MAX_AGE_DAYS: int = 60
+    # More new trades than this for one person in one run → one digest message.
+    NOTIFY_DIGEST_THRESHOLD: int = 3
+    # Alert when a ticker newly enters the Top-N "Most traded" / "Multi-buyer" lists
+    NOTIFY_HOT_STOCKS: bool = True
+    HOT_STOCKS_TOP_N: int = 10
+    HOT_STOCKS_STATE_FILE: str = "logs/hot_stocks_state.json"
+
     # ─── Optional Initial Seeding ─────────────────────────────
     SEED_LLM_PROVIDER: str | None = None
     SEED_LLM_URL: str | None = None

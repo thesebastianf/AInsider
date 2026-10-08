@@ -3,6 +3,7 @@ AInsider Tracker – System Router
 Health check, system stats, and live logs for the Developer Tab.
 """
 
+import logging
 import time
 from collections import deque
 from datetime import datetime
@@ -13,6 +14,8 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models import Trade, TargetPerson, Subscription, AssetPerformance, LLMConfig
 from app.schemas import SystemStats, LogEntry, LogList
+
+logger = logging.getLogger("ainsider.system")
 
 router = APIRouter(prefix="/api", tags=["System"])
 
@@ -273,28 +276,8 @@ def get_insights(db: Session = Depends(get_db)):
     hot_stock = None
     try:
         from app.routers.trades import resolve_ticker_and_isin
-        from sqlalchemy import case, distinct
-        sixty_days_ago = date.today() - timedelta(days=60)
-        INVALID_TICKERS = ["NONE", "NONE.", "N/A", "NA", "NULL", "UNKNOWN", ""]
-        hot_q = (
-            db.query(
-                Trade.ticker,
-                func.count(Trade.id).label("trade_count"),
-                func.sum(case((Trade.type == "BUY", 1), else_=0)).label("buy_count"),
-                func.sum(case((Trade.type == "SELL", 1), else_=0)).label("sell_count"),
-                func.count(distinct(Trade.target_person_id)).label("distinct_persons"),
-                func.max(Trade.trade_date).label("last_trade_date"),
-            )
-            .filter(
-                Trade.trade_date >= sixty_days_ago,
-                Trade.ticker.isnot(None),
-                ~Trade.ticker.in_(INVALID_TICKERS)
-            )
-            .group_by(Trade.ticker)
-            .order_by(func.count(Trade.id).desc())
-            .limit(10)
-            .all()
-        )
+        from app.services.hot_alerts import top_traded
+        hot_q = top_traded(db, 10)
         for row in hot_q:
             tick = row.ticker
             cnt = row.trade_count

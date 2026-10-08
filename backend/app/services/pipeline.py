@@ -9,7 +9,7 @@ Orchestrates the complete trade ingestion pipeline:
 """
 
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -18,7 +18,7 @@ from app.database import SessionLocal
 from app.models import TargetPerson, Trade, Subscription
 from app.services.fetcher import fetch_trades, RawTrade, fetch_wikipedia_photo
 from app.services.llm_provider import evaluate_trade
-from app.services.notifier import notify_all_enabled
+from app.services.notifier import notify_all_enabled, notify_digest
 from app.utils.names import normalize_person_name
 
 logger = logging.getLogger("ainsider.pipeline")
@@ -26,7 +26,7 @@ logger = logging.getLogger("ainsider.pipeline")
 
 def _get_or_create_person(db: Session, raw: RawTrade) -> TargetPerson:
     """Get existing person or create a new one."""
-    from app.services.fetcher import fetch_wikipedia_photo, FUND_MANAGER_MAPPING
+    from app.services.fetcher import FUND_MANAGER_MAPPING
 
     normalized_name = normalize_person_name(raw.person_name)
     raw.person_name = normalized_name
@@ -46,21 +46,42 @@ def _get_or_create_person(db: Session, raw: RawTrade) -> TargetPerson:
             display_name=display_alias,
             category=raw.person_category,
             committee_affiliations=raw.committees,
-            photo_url=fetch_wikipedia_photo(normalized_name),
             is_tracked=False,  # Auto-created persons from feed start as available (untracked)
             is_active=True,
         )
         db.add(person)
         db.flush()
         logger.info(f"Created available target person: {normalized_name} ({raw.person_category})")
-    else:
-        # Update display_name or photo_url if missing
-        if display_alias and not person.display_name:
-            person.display_name = display_alias
-        if not person.photo_url:
-            person.photo_url = fetch_wikipedia_photo(normalized_name)
-            
+    elif display_alias and not person.display_name:
+        person.display_name = display_alias
+
+    _maybe_fetch_photo(person)
     return person
+
+
+# Photo lookups hit Wikipedia over the network. Feeds contain thousands of
+# trades per run, so look each person up at most once per run and cap the
+# total per run; persons not reached are picked up by the next run.
+PHOTO_LOOKUPS_PER_RUN = 150
+_photo_attempted: set[int] = set()
+_photo_budget = PHOTO_LOOKUPS_PER_RUN
+
+
+def _reset_photo_budget() -> None:
+    global _photo_budget
+    _photo_attempted.clear()
+    _photo_budget = PHOTO_LOOKUPS_PER_RUN
+
+
+def _maybe_fetch_photo(person: TargetPerson) -> None:
+    global _photo_budget
+    if person.photo_url or person.custom_photo_url or person.id in _photo_attempted:
+        return
+    if _photo_budget <= 0:
+        return
+    _photo_attempted.add(person.id)
+    _photo_budget -= 1
+    person.photo_url = fetch_wikipedia_photo(person.name)
 
 
 
@@ -120,6 +141,43 @@ def refresh_person_activity(db: Session) -> int:
     return inactive_count
 
 
+def _dispatch_notifications(db: Session, pending: dict[int, tuple[str, list[dict]]]) -> int:
+    """Send queued trade alerts: skip stale trades, digest bursts per person."""
+    from app.config import settings
+    from app.routers.system import add_log
+
+    cutoff = date.today() - timedelta(days=settings.NOTIFY_MAX_AGE_DAYS)
+    sent = 0
+    for person_name, trades in pending.values():
+        fresh = [t for t in trades if t["reference_date"] and t["reference_date"] >= cutoff]
+        skipped = len(trades) - len(fresh)
+        if skipped:
+            add_log("INFO", f"Skipped {skipped} alert(s) for {person_name}: older than {settings.NOTIFY_MAX_AGE_DAYS} days")
+        if not fresh:
+            continue
+        try:
+            if len(fresh) > settings.NOTIFY_DIGEST_THRESHOLD:
+                notify_digest(db, person_name, fresh)
+                add_log("INFO", f"Sent digest alert for {person_name} ({len(fresh)} trades)")
+            else:
+                for t in fresh:
+                    notify_all_enabled(
+                        db=db,
+                        person_name=person_name,
+                        trade_type=t["trade_type"],
+                        ticker=t["ticker"],
+                        amount=t["amount"],
+                        ai_score=t["ai_score"],
+                        ai_summary=t["ai_summary"],
+                        trade_date=t["trade_date"],
+                    )
+            sent += 1
+        except Exception as e:
+            logger.error(f"Notification failed for {person_name}: {e}")
+            add_log("WARN", f"Notification error for {person_name}: {str(e)[:80]}")
+    return sent
+
+
 def run_pipeline() -> dict:
     """Execute the complete data pipeline."""
     from app.routers.system import add_log
@@ -131,6 +189,10 @@ def run_pipeline() -> dict:
         "ai_evaluated": 0, "prices_updated": 0,
         "notifications_sent": 0, "errors": 0,
     }
+
+    if app.state.app_state.get("is_pipeline_running"):
+        add_log("WARN", "Pipeline already running, skipping this trigger")
+        return stats
 
     add_log("INFO", "═══ Pipeline started ═══")
     logger.info("Pipeline run started")
@@ -158,6 +220,16 @@ def run_pipeline() -> dict:
         _price_cache = {}  # Reset cache each pipeline run
 
 
+        # Tracked persons get first claim on this run's photo lookups
+        _reset_photo_budget()
+        for person in db.query(TargetPerson).filter(
+            TargetPerson.is_tracked == True,  # noqa: E712
+            TargetPerson.photo_url.is_(None),
+            TargetPerson.custom_photo_url.is_(None),
+        ).all():
+            _maybe_fetch_photo(person)
+        db.commit()
+
         # ─── Pass 1: Fast Discovery ──────────────────────────────────
         # Create all TargetPersons instantly so the 'Discover' tab populates
         # immediately, before the 50+ minute yfinance rate-limited loop begins.
@@ -167,6 +239,11 @@ def run_pipeline() -> dict:
         
         # ─── Pass 2: Trade Ingestion & Rate-Limited Lookups ──────────
         updated_tickers = set()
+        pending_notifications: dict[int, tuple[str, list[dict]]] = {}
+        subscribed_ids = {
+            pid for (pid,) in db.query(Subscription.target_person_id)
+            .filter(Subscription.user_id == "default").all()
+        }
 
         for raw in raw_trades:
             try:
@@ -229,30 +306,33 @@ def run_pipeline() -> dict:
                     updated_tickers.add(raw.ticker)
                     stats["prices_updated"] += 1
 
-                # Step 6: Notifications to all enabled providers
-                try:
-                    subscription = db.query(Subscription).filter(Subscription.target_person_id == person.id).first()
-                    if subscription:
-                        notify_all_enabled(
-                            db=db,
-                            person_name=person.name,
-                            trade_type=raw.trade_type,
-                            ticker=raw.ticker,
-                            amount=raw.amount_range,
-                            ai_score=trade.ai_score or 0,
-                            ai_summary=trade.ai_summary or "No AI evaluation",
-                            trade_date=raw.trade_date.isoformat() if raw.trade_date else "",
-                        )
-                        stats["notifications_sent"] += 1
-                except Exception as e:
-                    logger.error(f"Notification failed: {e}")
-                    add_log("WARN", f"Notification error: {str(e)[:50]}")
+                # Step 6: Queue notification; dispatched after the loop so many
+                # trades of one person in one run collapse into a single digest.
+                if person.id in subscribed_ids:
+                    pending_notifications.setdefault(person.id, (person.name, []))[1].append({
+                        "trade_type": raw.trade_type,
+                        "ticker": raw.ticker,
+                        "amount": raw.amount_range,
+                        "ai_score": trade.ai_score or 0,
+                        "ai_summary": trade.ai_summary or "No AI evaluation",
+                        "trade_date": raw.trade_date.isoformat() if raw.trade_date else "",
+                        "reference_date": raw.filing_date or raw.trade_date,
+                    })
 
             except Exception as e:
                 stats["errors"] += 1
                 logger.error(f"Pipeline error processing trade: {e}")
                 add_log("ERROR", f"Pipeline error: {str(e)[:80]}")
                 db.rollback()
+
+        stats["notifications_sent"] = _dispatch_notifications(db, pending_notifications)
+
+        try:
+            from app.services.hot_alerts import check_hot_stock_entries
+            check_hot_stock_entries(db)
+        except Exception as e:
+            logger.error(f"Hot stocks alert check failed: {e}")
+            add_log("WARN", f"Hot stocks alert check failed: {str(e)[:80]}")
 
         _runtime_overrides["last_pipeline_run"] = datetime.now()
 

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
+import logging
 import os, uuid, shutil
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from app.database import get_db
 from app.models import TargetPerson, Trade
 from app.schemas import PersonOut, PersonList, TradeOut, PersonBase
 from app.utils.names import normalize_person_name
+
+logger = logging.getLogger("ainsider.persons")
 
 router = APIRouter(prefix="/api/persons", tags=["Persons"])
 
@@ -32,9 +35,14 @@ def create_person(data: PersonBase, db: Session = Depends(get_db)):
         committee_affiliations=data.committee_affiliations or [],
         photo_url=data.photo_url,
         description=data.description,
+        is_tracked=True,
         is_followed=True
     )
     db.add(person)
+    db.flush()
+    # Manually added persons are tracked, so they also get trade alerts
+    from app.models import Subscription
+    db.add(Subscription(user_id="default", target_person_id=person.id))
     db.commit()
     db.refresh(person)
     return _build_person_response(person, db)
